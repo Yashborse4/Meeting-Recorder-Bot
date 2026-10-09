@@ -393,6 +393,10 @@ function registerParticipant(rawName: string, idHint?: string, isHost?: boolean)
     lower === 'you' ||
     lower === 'presentation' ||
     lower.startsWith('presentation (') ||
+    lower.startsWith('présentation (') ||
+    lower.startsWith('presentación (') ||
+    lower.startsWith('präsentation (') ||
+    lower.startsWith('apresentação (') ||
     lower === 'everyone' ||
     lower.includes('show everyone') ||
     lower.includes('meeting details') ||
@@ -406,16 +410,21 @@ function registerParticipant(rawName: string, idHint?: string, isHost?: boolean)
     return;
   }
 
-  // Canonical key normalization (ignores (You), (Presentation), etc.)
+  // Canonical key normalization (ignores (You), (Presentation), localized suffixes, etc.)
   const canonicalKey =
     idHint ||
     cleanName
       .toLowerCase()
-      .replace(/\s*\((you|presentation|guest|external)\)\s*/gi, '')
+      .replace(/\s*\((you|presentation|guest|external|présentation|presentación|präsentation|apresentação|tu|vous|du)\)\s*/gi, '')
       .replace(/\s+/g, ' ')
       .trim();
 
   if (!canonicalKey) return;
+
+  // Clean display name by stripping presentation suffixes
+  const displayName = cleanName
+    .replace(/\s*\((presentation|guest|external|présentation|presentación|präsentation|apresentação)\)\s*/gi, '')
+    .trim() || cleanName;
 
   const now = Date.now();
   const existing = attendanceMap.get(canonicalKey);
@@ -423,13 +432,13 @@ function registerParticipant(rawName: string, idHint?: string, isHost?: boolean)
     existing.lastSeen = now;
     existing.durationMs = Math.max(existing.durationMs, now - existing.firstSeen);
     if (isHost) existing.isHost = true;
-    if (cleanName.length > existing.name.length && !cleanName.toLowerCase().includes('presentation')) {
-      existing.name = cleanName;
+    if (displayName.length > existing.name.length && !displayName.toLowerCase().includes('presentation')) {
+      existing.name = displayName;
     }
   } else {
     attendanceMap.set(canonicalKey, {
       id: canonicalKey,
-      name: cleanName,
+      name: displayName,
       firstSeen: now,
       lastSeen: now,
       durationMs: 0,
@@ -448,7 +457,7 @@ function registerSpeaker(speakerName: string): void {
   registerParticipant(trimmed);
   const canonicalKey = trimmed
     .toLowerCase()
-    .replace(/\s*\((you|presentation|guest|external)\)\s*/gi, '')
+    .replace(/\s*\((you|presentation|guest|external|présentation|presentación|präsentation|apresentação|tu|vous|du)\)\s*/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -487,12 +496,15 @@ function scanParticipants(): void {
       }
     }
 
-    // 3. People / Participants List Panel (when open in Meet)
+    // 3. People / Participants List Panel (when open in Meet, including international versions)
     const listItems = document.querySelectorAll<HTMLElement>(
       'div[role="list"][aria-label*="participant" i] div[role="listitem"], ' +
       'div[role="list"][aria-label*="people" i] div[role="listitem"], ' +
+      'div[role="list"][aria-label*="persona" i] div[role="listitem"], ' +
+      'div[role="list"][aria-label*="teilnehmer" i] div[role="listitem"], ' +
       'div[aria-label*="Everyone" i] div[role="listitem"], ' +
-      'div[role="tabpanel"] div[role="listitem"]'
+      'div[role="tabpanel"] div[role="listitem"], ' +
+      'aside div[role="list"] div[role="listitem"]'
     );
     for (const item of listItems) {
       const nameSpan = item.querySelector<HTMLElement>('span.zWGUib, span[aria-label], span[jsname], span');

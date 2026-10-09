@@ -123,8 +123,19 @@ function setUI(recording: boolean, startedAt?: number, paused = false, realStart
   }
 }
 
+const toastEl = document.getElementById('toast') as HTMLDivElement | null;
+let toastTimeout: number | null = null;
+
 function toast(msg: string) {
   console.log('[popup]', msg);
+  if (toastEl) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('visible');
+    if (toastTimeout) clearTimeout(toastTimeout);
+    toastTimeout = window.setTimeout(() => {
+      toastEl.classList.remove('visible');
+    }, 2500);
+  }
 }
 
 // Navigation between Main and Settings Views
@@ -453,13 +464,14 @@ startBtn?.addEventListener('click', async () => {
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id) throw new Error('No active tab found.');
+    const activeTabId = tab.id;
 
     if (tab.url && !tab.url.includes('meet.google.com')) {
       throw new Error('Please switch to your Google Meet call tab before starting recording.');
     }
 
     // Reset content script transcript buffer
-    await chrome.tabs.sendMessage(tab.id, { type: 'RESET_TRANSCRIPT' }).catch(() => {});
+    await chrome.tabs.sendMessage(activeTabId, { type: 'RESET_TRANSCRIPT' }).catch(() => {});
 
     // Obtain mediaStreamId directly under user gesture in the popup
     let streamId: string | undefined;
@@ -467,7 +479,7 @@ startBtn?.addEventListener('click', async () => {
 
     try {
       streamId = await new Promise<string>((resolve, reject) => {
-        chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id }, (id?: string) => {
+        chrome.tabCapture.getMediaStreamId({ targetTabId: activeTabId }, (id?: string) => {
           const err = chrome.runtime.lastError;
           if (err || !id) {
             return reject(err ? new Error(err.message) : new Error('No streamId returned by tabCapture'));
@@ -514,7 +526,7 @@ startBtn?.addEventListener('click', async () => {
 
     const resp = await chrome.runtime.sendMessage({
       type: 'START_RECORDING',
-      tabId: tab.id,
+      tabId: activeTabId,
       streamId,
       source,
     });
@@ -648,12 +660,22 @@ btnDownloadAttendance?.addEventListener('click', async () => {
       return;
     }
 
+    // Calculate actual session timestamps from observed attendee presences
+    let minFirstSeen = Date.now();
+    let maxLastSeen = 0;
+    for (const a of attendanceList) {
+      if (a.firstSeen && a.firstSeen < minFirstSeen) minFirstSeen = a.firstSeen;
+      if (a.lastSeen && a.lastSeen > maxLastSeen) maxLastSeen = a.lastSeen;
+    }
+    const sessionStart = minFirstSeen <= Date.now() ? minFirstSeen : Date.now();
+    const sessionEnd = maxLastSeen >= sessionStart ? maxLastSeen : Date.now();
+
     // 3. Generate Excel-compatible CSV with UTF-8 BOM
     const csvContent = recorderDB.generateAttendanceCSV(
       attendanceList,
       meetingTitle,
-      Date.now() - 60000,
-      Date.now()
+      sessionStart,
+      sessionEnd
     );
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });

@@ -46,7 +46,7 @@ function broadcastState(recording: boolean, extra?: Record<string, any>) {
   try {
     if (recording) {
       chrome.power?.requestKeepAwake('display');
-      if (activeRecordingTabId) {
+      if (typeof activeRecordingTabId === 'number') {
         chrome.tabs.update(activeRecordingTabId, { autoDiscardable: false }).catch(() => {});
       }
       if (!heartbeatTimer) {
@@ -58,7 +58,7 @@ function broadcastState(recording: boolean, extra?: Record<string, any>) {
       }
     } else {
       chrome.power?.releaseKeepAwake();
-      if (activeRecordingTabId) {
+      if (typeof activeRecordingTabId === 'number') {
         chrome.tabs.update(activeRecordingTabId, { autoDiscardable: true }).catch(() => {});
       }
       if (heartbeatTimer) {
@@ -87,7 +87,10 @@ function broadcastState(recording: boolean, extra?: Record<string, any>) {
   // Broadcast to all Google Meet tabs for native UI feedback
   chrome.tabs.query({ url: 'https://meet.google.com/*' }, (tabs) => {
     tabs.forEach((t) => {
-      if (t.id) chrome.tabs.sendMessage(t.id, payload).catch(() => {});
+      if (typeof t.id === 'number') {
+        const tabId = t.id;
+        chrome.tabs.sendMessage(tabId, payload).catch(() => {});
+      }
     });
   });
 }
@@ -471,7 +474,7 @@ chrome.commands?.onCommand.addListener(async (command) => {
     } else {
       try {
         await ensureOffscreen();
-        const captureInfo = await getStreamIdForTab(tab.id);
+        const captureInfo = await getStreamIdForTab(tabId);
         let meetingId = 'google-meet';
         if (tab.url) {
           const pathParts = new URL(tab.url).pathname.split('/');
@@ -482,7 +485,7 @@ chrome.commands?.onCommand.addListener(async (command) => {
         let initialMuted = false;
         try {
           const muteCheck = await new Promise<{ isMuted?: boolean }>((resolve) => {
-            chrome.tabs.sendMessage(tab.id!, { type: 'QUERY_MUTE_STATE' }, (res) => {
+            chrome.tabs.sendMessage(tabId, { type: 'QUERY_MUTE_STATE' }, (res) => {
               if (chrome.runtime.lastError || !res) resolve({});
               else resolve(res);
             });
@@ -493,7 +496,7 @@ chrome.commands?.onCommand.addListener(async (command) => {
 
         const r = await postToOffscreen({ type: 'OFFSCREEN_START', streamId: captureInfo.streamId, source: captureInfo.source, meetingId, initialMuted });
         if (r?.ok) {
-          activeRecordingTabId = tab.id;
+          activeRecordingTabId = tabId;
           activeRecordingStartTime = Date.now();
           activeRecordingRealStartTime = activeRecordingStartTime;
           activeRecordingSessionId = r.sessionId;
@@ -669,7 +672,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.storage.local.set({ micPermissionGranted: true }).catch(() => {});
     chrome.tabs.query({ url: 'https://meet.google.com/*' }, (tabs) => {
       tabs.forEach((t) => {
-        if (t.id) chrome.tabs.sendMessage(t.id, { type: 'MIC_PERMISSION_GRANTED' }).catch(() => {});
+        if (typeof t.id === 'number') {
+          const tabId = t.id;
+          chrome.tabs.sendMessage(tabId, { type: 'MIC_PERMISSION_GRANTED' }).catch(() => {});
+        }
       });
     });
     sendResponse({ ok: true });

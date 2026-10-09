@@ -423,7 +423,8 @@ class RecorderDatabase {
     sorted.forEach((att, idx) => {
       const joinStr = att.firstSeen ? new Date(att.firstSeen).toLocaleTimeString() : '--:--';
       const lastStr = att.lastSeen ? new Date(att.lastSeen).toLocaleTimeString() : '--:--';
-      const durationStr = formatDurationStr(att.durationMs || (att.lastSeen - att.firstSeen));
+      const durMs = Math.max(att.durationMs || 0, (att.lastSeen || 0) - (att.firstSeen || 0));
+      const durationStr = durMs > 0 ? formatDurationStr(durMs) : '< 1 min';
       const spoke = att.spokeCount > 0 ? `Yes (${att.spokeCount})` : 'No';
       const status = 'Present';
 
