@@ -391,6 +391,20 @@
         border-color: #4caf50;
       }
 
+      button.btn-attendance {
+        background: #1e2922;
+        color: #81c995;
+        border: 1px solid rgba(46, 125, 50, 0.5);
+        margin-top: 2px;
+      }
+
+      button.btn-attendance:hover:not(:disabled) {
+        background: #26382c;
+        color: #a7f3d0;
+        border-color: #4caf50;
+        box-shadow: 0 2px 10px rgba(35, 165, 90, 0.2);
+      }
+
       .auto-save-pill {
         display: flex;
         align-items: center;
@@ -689,6 +703,17 @@
             </svg>
             Stop & Save (Video + Transcript)
           </button>
+
+          <button id="btn-download-attendance" class="main-btn btn-attendance" title="Download Excel attendance sheet (.csv)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <polyline points="10 9 9 9 8 9" />
+            </svg>
+            Download Attendance (Excel)
+          </button>
         </div>
 
         <!-- Automatic dual-save reassurance -->
@@ -746,6 +771,17 @@
             </div>
             <label class="switch">
               <input type="checkbox" id="setting-save-vtt" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="toggle-item">
+            <div class="toggle-label">
+              <span class="toggle-title">Attendance Sheet (Excel)</span>
+              <span class="toggle-desc">Auto-download attendee list (.csv / Excel)</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="setting-save-attendance" />
               <span class="slider"></span>
             </label>
           </div>

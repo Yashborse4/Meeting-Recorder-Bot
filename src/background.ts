@@ -185,14 +185,15 @@ chrome.runtime.onConnect.addListener((port) => {
       broadcastState(lastKnownRecording, msg);
     }
 
-    // Multi-file downloads (Video WebM/MP4 + Plain Text .txt transcript + WebVTT subtitles)
+    // Multi-file downloads (Video WebM/MP4 + Plain Text .txt transcript + WebVTT subtitles + Excel Attendance .csv)
     if (msg?.type === 'OFFSCREEN_SAVE') {
       const sanitize = (name: string) => name.replace(/[/\\?%*:|"<>]/g, '-').replace(/\s+/g, '_');
       const videoFilename = sanitize(msg.videoFilename || `GoogleMeet-Recording-${Date.now()}.webm`);
       const txtFilename = sanitize(msg.txtFilename || `GoogleMeet-Transcript-${Date.now()}.txt`);
       const vttFilename = sanitize(msg.vttFilename || `GoogleMeet-Transcript-${Date.now()}.vtt`);
+      const attendanceFilename = sanitize(msg.attendanceFilename || `GoogleMeet-Attendance-${Date.now()}.csv`);
 
-      bglog('OFFSCREEN_SAVE received: video =', videoFilename, ', transcript =', txtFilename);
+      bglog('OFFSCREEN_SAVE received: video =', videoFilename, ', transcript =', txtFilename, ', attendance =', attendanceFilename);
 
       void (async () => {
         const settings = await getSettings();
@@ -267,6 +268,37 @@ chrome.runtime.onConnect.addListener((port) => {
               }
             );
           }
+
+          // 3. Download Attendance Excel Sheet (.csv) if enabled in settings (default: off)
+          const attendanceUrl = msg.attendanceBlobUrl || msg.attendanceDataUrl;
+          if (attendanceUrl && settings.saveAttendance) {
+            chrome.downloads.download(
+              {
+                url: attendanceUrl,
+                filename: attendanceFilename,
+                saveAs: false,
+              },
+              (attId) => {
+                if (chrome.runtime.lastError) {
+                  bglog('Attendance sheet download error:', chrome.runtime.lastError.message);
+                  if (msg.attendanceDataUrl && attendanceUrl !== msg.attendanceDataUrl) {
+                    chrome.downloads.download(
+                      { url: msg.attendanceDataUrl, filename: attendanceFilename, saveAs: false },
+                      (retryId) => {
+                        if (!chrome.runtime.lastError) {
+                          bglog(`Attendance sheet (fallback) initiated, id=${retryId}`);
+                          chrome.runtime.sendMessage({ type: 'ATTENDANCE_SAVED', filename: attendanceFilename }).catch(() => {});
+                        }
+                      }
+                    );
+                  }
+                } else {
+                  bglog(`Attendance sheet download initiated, id=${attId}`);
+                  chrome.runtime.sendMessage({ type: 'ATTENDANCE_SAVED', filename: attendanceFilename }).catch(() => {});
+                }
+              }
+            );
+          }
         };
 
         let activeDownloadId: number | null = null;
@@ -278,6 +310,7 @@ chrome.runtime.onConnect.addListener((port) => {
               videoBlobUrl: msg.videoBlobUrl,
               txtBlobUrl: msg.txtBlobUrl,
               vttBlobUrl: msg.vttBlobUrl,
+              attendanceBlobUrl: msg.attendanceBlobUrl,
             });
           } catch {}
         };
@@ -415,13 +448,26 @@ chrome.commands?.onCommand.addListener(async (command) => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id || !tab.url?.includes('meet.google.com')) return;
     if (lastKnownRecording) {
+      let attendanceData: any[] = [];
       if (tab?.id) {
         try {
           await chrome.tabs.sendMessage(tab.id, { type: 'FLUSH_CAPTIONS' });
-          await wait(150);
         } catch {}
+        try {
+          const attResp = await new Promise<any>((resolve) => {
+            chrome.tabs.sendMessage(tab.id, { type: 'GET_ATTENDANCE' }, (res) => {
+              if (chrome.runtime.lastError || !res) resolve(null);
+              else resolve(res);
+            });
+            setTimeout(() => resolve(null), 300);
+          });
+          if (attResp?.attendance && Array.isArray(attResp.attendance)) {
+            attendanceData = attResp.attendance;
+          }
+        } catch {}
+        await wait(100);
       }
-      if (offscreenPort) await postToOffscreen({ type: 'OFFSCREEN_STOP' });
+      if (offscreenPort) await postToOffscreen({ type: 'OFFSCREEN_STOP', attendance: attendanceData });
     } else {
       try {
         await ensureOffscreen();
@@ -487,6 +533,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (st.sessionId) activeRecordingSessionId = st.sessionId;
             if (st.startedAt) activeRecordingStartTime = st.startedAt;
             if (st.realStartTime) activeRecordingRealStartTime = st.realStartTime;
+            // Restore tabId from session storage if SW restart wiped it from memory
+            if (lastKnownRecording && activeRecordingTabId === null) {
+              try {
+                const stored: any = await new Promise((resolve) => {
+                  (chrome.storage as any)?.session?.get?.(['tabId'], (r: any) => resolve(r || {}));
+                });
+                if (stored?.tabId) {
+                  activeRecordingTabId = stored.tabId;
+                  bglog('Fast path: restored activeRecordingTabId from session storage:', activeRecordingTabId);
+                }
+              } catch {}
+            }
           }
         } else if (hasOff) {
           // Slow path: port not connected yet, try to reconnect with timeout
@@ -505,6 +563,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               if (st.sessionId) activeRecordingSessionId = st.sessionId;
               if (st.startedAt) activeRecordingStartTime = st.startedAt;
               if (st.realStartTime) activeRecordingRealStartTime = st.realStartTime;
+              // Restore tabId from session storage if SW restart wiped it from memory
+              if (lastKnownRecording && activeRecordingTabId === null) {
+                try {
+                  const stored: any = await new Promise((resolve) => {
+                    (chrome.storage as any)?.session?.get?.(['tabId'], (r: any) => resolve(r || {}));
+                  });
+                  if (stored?.tabId) {
+                    activeRecordingTabId = stored.tabId;
+                    bglog('Slow path: restored activeRecordingTabId from session storage:', activeRecordingTabId);
+                  }
+                } catch {}
+              }
             }
           } catch (e) {
             bglog('GET_RECORDING_STATUS slow path failed:', e);
@@ -760,14 +830,27 @@ async function handleStopRecording(msg: any, sendResponse: (res: any) => void) {
       }
     }
 
+    let attendanceData: any[] = [];
     if (activeRecordingTabId) {
       try {
         await chrome.tabs.sendMessage(activeRecordingTabId, { type: 'FLUSH_CAPTIONS' });
-        await wait(150);
       } catch {}
+      try {
+        const attResp = await new Promise<any>((resolve) => {
+          chrome.tabs.sendMessage(activeRecordingTabId!, { type: 'GET_ATTENDANCE' }, (res) => {
+            if (chrome.runtime.lastError || !res) resolve(null);
+            else resolve(res);
+          });
+          setTimeout(() => resolve(null), 300);
+        });
+        if (attResp?.attendance && Array.isArray(attResp.attendance)) {
+          attendanceData = attResp.attendance;
+        }
+      } catch {}
+      await wait(100);
     }
     if (offscreenPort && lastKnownRecording) {
-      const r = await postToOffscreen({ type: 'OFFSCREEN_STOP' });
+      const r = await postToOffscreen({ type: 'OFFSCREEN_STOP', attendance: attendanceData });
       bglog('OFFSCREEN_STOP response', r);
     }
     sendResponse({ ok: true });

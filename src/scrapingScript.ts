@@ -367,7 +367,154 @@ function checkMeetMuteState(force = false) {
   }
 }
 
-// --- 4. Resilient Multi-Tier Caption Scraper ---
+// --- 4. Attendance & Participant Tracking ---
+export interface AttendeeRecord {
+  id: string;
+  name: string;
+  firstSeen: number;
+  lastSeen: number;
+  durationMs: number;
+  spokeCount: number;
+  lastSpokeAt: number | null;
+  isHost?: boolean;
+}
+
+const attendanceMap = new Map<string, AttendeeRecord>();
+
+function registerParticipant(rawName: string, idHint?: string, isHost?: boolean): void {
+  if (!rawName) return;
+  const cleanName = rawName.trim();
+  const lower = cleanName.toLowerCase();
+
+  // Filter out non-participant UI strings, counters, and generic button labels
+  if (
+    !cleanName ||
+    cleanName.length < 2 ||
+    lower === 'you' ||
+    lower === 'presentation' ||
+    lower.startsWith('presentation (') ||
+    lower === 'everyone' ||
+    lower.includes('show everyone') ||
+    lower.includes('meeting details') ||
+    lower.includes('turn on') ||
+    lower.includes('turn off') ||
+    lower.includes('more options') ||
+    lower === 'host' ||
+    lower === 'contributor' ||
+    /^\d+$/.test(cleanName)
+  ) {
+    return;
+  }
+
+  // Canonical key normalization (ignores (You), (Presentation), etc.)
+  const canonicalKey =
+    idHint ||
+    cleanName
+      .toLowerCase()
+      .replace(/\s*\((you|presentation|guest|external)\)\s*/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  if (!canonicalKey) return;
+
+  const now = Date.now();
+  const existing = attendanceMap.get(canonicalKey);
+  if (existing) {
+    existing.lastSeen = now;
+    existing.durationMs = Math.max(existing.durationMs, now - existing.firstSeen);
+    if (isHost) existing.isHost = true;
+    if (cleanName.length > existing.name.length && !cleanName.toLowerCase().includes('presentation')) {
+      existing.name = cleanName;
+    }
+  } else {
+    attendanceMap.set(canonicalKey, {
+      id: canonicalKey,
+      name: cleanName,
+      firstSeen: now,
+      lastSeen: now,
+      durationMs: 0,
+      spokeCount: 0,
+      lastSpokeAt: null,
+      isHost: !!isHost,
+    });
+  }
+}
+
+function registerSpeaker(speakerName: string): void {
+  if (!speakerName) return;
+  const trimmed = speakerName.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'speaker') return;
+
+  registerParticipant(trimmed);
+  const canonicalKey = trimmed
+    .toLowerCase()
+    .replace(/\s*\((you|presentation|guest|external)\)\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const att = attendanceMap.get(canonicalKey);
+  if (att) {
+    att.spokeCount++;
+    att.lastSpokeAt = Date.now();
+    att.lastSeen = Date.now();
+    att.durationMs = Math.max(att.durationMs, att.lastSeen - att.firstSeen);
+  }
+}
+
+function scanParticipants(): void {
+  try {
+    // 1. Current user (self-name)
+    const selfEls = document.querySelectorAll<HTMLElement>('[data-self-name]');
+    for (const el of selfEls) {
+      const selfName = el.getAttribute('data-self-name');
+      if (selfName) registerParticipant(`${selfName} (You)`, 'self');
+    }
+
+    // 2. Video Grid Tiles
+    const participantTiles = document.querySelectorAll<HTMLElement>('[data-participant-id], [data-requested-participant-id]');
+    for (const tile of participantTiles) {
+      const partId = tile.getAttribute('data-participant-id') || tile.getAttribute('data-requested-participant-id');
+      const nameEl = tile.querySelector<HTMLElement>(
+        'div.notranslate, span.XEazBc, span.zWGUib, [data-self-name], [aria-label]'
+      );
+      const nameText =
+        nameEl?.getAttribute('data-self-name') ||
+        nameEl?.getAttribute('aria-label') ||
+        nameEl?.textContent ||
+        tile.getAttribute('aria-label');
+      if (nameText) {
+        registerParticipant(nameText, partId || undefined);
+      }
+    }
+
+    // 3. People / Participants List Panel (when open in Meet)
+    const listItems = document.querySelectorAll<HTMLElement>(
+      'div[role="list"][aria-label*="participant" i] div[role="listitem"], ' +
+      'div[role="list"][aria-label*="people" i] div[role="listitem"], ' +
+      'div[aria-label*="Everyone" i] div[role="listitem"], ' +
+      'div[role="tabpanel"] div[role="listitem"]'
+    );
+    for (const item of listItems) {
+      const nameSpan = item.querySelector<HTMLElement>('span.zWGUib, span[aria-label], span[jsname], span');
+      const nameText = nameSpan?.getAttribute('aria-label') || nameSpan?.textContent;
+      if (nameText) {
+        const isHost = item.textContent?.toLowerCase().includes('host') || false;
+        registerParticipant(nameText, undefined, isHost);
+      }
+    }
+
+    // 4. Tile name badges
+    const nameBadges = document.querySelectorAll<HTMLElement>('div[data-allocation-id] span, div.poVWob');
+    for (const badge of nameBadges) {
+      const badgeText = badge.textContent?.trim();
+      if (badgeText) registerParticipant(badgeText);
+    }
+  } catch (err) {
+    console.warn('[MeetContentScript] scanParticipants error:', err);
+  }
+}
+
+// --- 5. Resilient Multi-Tier Caption Scraper ---
 interface Chunk {
   startTime: number;
   endTime: number;
@@ -387,6 +534,9 @@ function handleCaption(speakerKey: string, speakerName: string, rawText: string)
   if (isPaused) return; // Do not record captions while paused
   const text = rawText.trim();
   if (!text) return;
+
+  // Track speaker activity in attendance register
+  registerSpeaker(speakerName);
 
   const norm = normalize(text);
   const prev = lastSeen.get(speakerKey);
@@ -754,12 +904,19 @@ function init() {
   // User action listeners to immediately detect mute toggles (click or Ctrl+D)
   document.addEventListener('click', () => {
     setTimeout(() => checkMeetMuteState(), 80);
+    setTimeout(() => scanParticipants(), 150);
   });
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
       setTimeout(() => checkMeetMuteState(), 80);
     }
   });
+
+  // Initial and periodic scan for participant attendance
+  scanParticipants();
+  setInterval(() => {
+    scanParticipants();
+  }, 2500);
 
   console.log('[MeetContentScript] Content script initialized.');
 }
@@ -778,6 +935,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.recording) {
       // Force sync mute state to background and offscreen on recording start
       setTimeout(() => checkMeetMuteState(true), 100);
+      scanParticipants();
     }
     sendResponse({ ok: true });
     return false;
@@ -805,6 +963,28 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     prior.clear();
     lastSeen.clear();
     transcriptBuffer.length = 0;
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (msg?.type === 'GET_ATTENDANCE' || msg?.type === 'FLUSH_ATTENDANCE') {
+    scanParticipants();
+    let meetingId = 'google-meet';
+    try {
+      const pathParts = window.location.pathname.split('/');
+      meetingId = pathParts[pathParts.length - 1] || 'google-meet';
+    } catch {}
+    sendResponse({
+      ok: true,
+      attendance: Array.from(attendanceMap.values()),
+      meetingId,
+      timestamp: Date.now(),
+    });
+    return false;
+  }
+
+  if (msg?.type === 'RESET_ATTENDANCE') {
+    attendanceMap.clear();
     sendResponse({ ok: true });
     return false;
   }

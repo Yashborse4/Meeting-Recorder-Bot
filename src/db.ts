@@ -1,6 +1,17 @@
 // src/db.ts
 // MeetRecorderDB: Local-first IndexedDB engine for crash-proof chunking, WebVTT captions, and session recovery.
 
+export interface AttendeeRecord {
+  id: string;
+  name: string;
+  firstSeen: number;
+  lastSeen: number;
+  durationMs: number;
+  spokeCount: number;
+  lastSpokeAt: number | null;
+  isHost?: boolean;
+}
+
 export interface SessionRecord {
   sessionId: string;
   meetingId: string;
@@ -10,6 +21,7 @@ export interface SessionRecord {
   mimeType: string;
   chunkCount: number;
   totalBytes: number;
+  attendance?: AttendeeRecord[];
 }
 
 export interface ChunkRecord {
@@ -315,6 +327,120 @@ class RecorderDatabase {
     }
 
     return txt;
+  }
+
+  // --- Attendance Management ---
+
+  public async saveAttendance(sessionId: string, attendance: AttendeeRecord[]): Promise<void> {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('sessions', 'readwrite');
+      const store = tx.objectStore('sessions');
+      const getReq = store.get(sessionId);
+      getReq.onsuccess = () => {
+        const session: SessionRecord | undefined = getReq.result;
+        if (session) {
+          session.attendance = attendance;
+          store.put(session);
+        }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  public async getAttendance(sessionId: string): Promise<AttendeeRecord[]> {
+    const session = await this.getSession(sessionId);
+    return session?.attendance || [];
+  }
+
+  /**
+   * Generates a fully formatted, Excel-compatible CSV string with UTF-8 BOM.
+   * Microsoft Excel opens UTF-8 BOM files seamlessly with full unicode character support.
+   */
+  public generateAttendanceCSV(
+    attendance: AttendeeRecord[],
+    meetingTitle: string,
+    sessionStart?: number,
+    sessionEnd?: number
+  ): string {
+    const escapeCSV = (val: any): string => {
+      const str = String(val ?? '').replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const formatDurationStr = (ms: number): string => {
+      const totalSec = Math.max(0, Math.floor(ms / 1000));
+      const hours = Math.floor(totalSec / 3600);
+      const mins = Math.floor((totalSec % 3600) / 60);
+      const secs = totalSec % 60;
+      if (hours > 0) {
+        return `${hours}h ${mins}m ${secs}s`;
+      }
+      if (mins > 0) {
+        return `${mins}m ${secs}s`;
+      }
+      return `${secs}s`;
+    };
+
+    const startDate = sessionStart ? new Date(sessionStart) : new Date();
+    const endDate = sessionEnd ? new Date(sessionEnd) : new Date();
+    const totalDurationMs = sessionStart && sessionEnd && sessionEnd >= sessionStart ? sessionEnd - sessionStart : 0;
+
+    // \uFEFF is UTF-8 Byte Order Mark for native Excel UTF-8 recognition
+    let csv = '\uFEFF';
+
+    // Summary header section
+    csv += `${escapeCSV('Google Meet Attendance Report')}\n`;
+    csv += `${escapeCSV('Meeting ID / Subject')},${escapeCSV(meetingTitle || 'Google Meet')}\n`;
+    csv += `${escapeCSV('Date')},${escapeCSV(startDate.toLocaleDateString())}\n`;
+    csv += `${escapeCSV('Started At')},${escapeCSV(sessionStart ? startDate.toLocaleTimeString() : '--:--')}\n`;
+    csv += `${escapeCSV('Ended At')},${escapeCSV(sessionEnd ? endDate.toLocaleTimeString() : '--:--')}\n`;
+    csv += `${escapeCSV('Total Duration')},${escapeCSV(totalDurationMs > 0 ? formatDurationStr(totalDurationMs) : '--')}\n`;
+    csv += `${escapeCSV('Total Attendees')},${escapeCSV(attendance.length)}\n`;
+    csv += `${escapeCSV('Report Generated At')},${escapeCSV(new Date().toLocaleString())}\n`;
+    csv += '\n';
+
+    // Data table columns
+    const headers = [
+      'No.',
+      'Attendee Name',
+      'First Joined',
+      'Last Seen',
+      'Duration Attended',
+      'Spoke in Meeting?',
+      'Caption Entries',
+      'Status',
+    ];
+    csv += headers.map(escapeCSV).join(',') + '\n';
+
+    // Sort attendees: earliest join time first, then alphabetically
+    const sorted = [...attendance].sort((a, b) => {
+      if (a.firstSeen !== b.firstSeen) return a.firstSeen - b.firstSeen;
+      return a.name.localeCompare(b.name);
+    });
+
+    sorted.forEach((att, idx) => {
+      const joinStr = att.firstSeen ? new Date(att.firstSeen).toLocaleTimeString() : '--:--';
+      const lastStr = att.lastSeen ? new Date(att.lastSeen).toLocaleTimeString() : '--:--';
+      const durationStr = formatDurationStr(att.durationMs || (att.lastSeen - att.firstSeen));
+      const spoke = att.spokeCount > 0 ? `Yes (${att.spokeCount})` : 'No';
+      const status = 'Present';
+
+      const row = [
+        idx + 1,
+        att.name,
+        joinStr,
+        lastStr,
+        durationStr,
+        spoke,
+        att.spokeCount,
+        status,
+      ];
+      csv += row.map(escapeCSV).join(',') + '\n';
+    });
+
+    return csv;
   }
 
   // --- Storage Cleanup ---

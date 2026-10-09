@@ -5,6 +5,7 @@ export interface ExtensionSettings {
   saveVideo: boolean;
   saveTxtTranscript: boolean;
   saveVttSubtitles: boolean;
+  saveAttendance: boolean;
   videoQuality: '1080p' | '720p' | 'max';
   autoMixMic: boolean;
   noiseSuppression: boolean;
@@ -15,6 +16,7 @@ export const DEFAULT_SETTINGS: ExtensionSettings = {
   saveVideo: true,
   saveTxtTranscript: true,
   saveVttSubtitles: true,
+  saveAttendance: false, // Off by default to avoid unexpected extra file downloads
   videoQuality: '1080p',
   autoMixMic: true,
   noiseSuppression: true,

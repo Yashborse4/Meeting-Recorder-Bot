@@ -7,7 +7,7 @@
 // - WebVTT subtitle export alongside video
 // - AudioContext autoplay suspension protection
 
-import { recorderDB } from './db';
+import { recorderDB, AttendeeRecord } from './db';
 import { fixWebmDuration } from './webmFix';
 import { getSettings } from './settings';
 
@@ -568,6 +568,23 @@ async function prepareAndRecord(streamId: string, source: 'tab' | 'desktop' = 't
         const txtContent = await recorderDB.generatePlainText(finishedSessionId);
         const txtBlob = new Blob([txtContent], { type: 'text/plain' });
 
+        // 4. Attendance Sheet compilation
+        const sessionAttendance = pendingAttendance.length > 0
+          ? pendingAttendance
+          : await recorderDB.getAttendance(finishedSessionId);
+
+        if (pendingAttendance.length > 0) {
+          await recorderDB.saveAttendance(finishedSessionId, pendingAttendance).catch(() => {});
+        }
+
+        const attendanceCsv = recorderDB.generateAttendanceCSV(
+          sessionAttendance,
+          meetingId || 'google-meet',
+          sessionStartTime,
+          Date.now()
+        );
+        const attendanceBlob = new Blob([attendanceCsv], { type: 'text/csv;charset=utf-8' });
+
         // Filenames
         let suffix = meetingId || 'google-meet';
         try {
@@ -580,14 +597,17 @@ async function prepareAndRecord(streamId: string, source: 'tab' | 'desktop' = 't
         const videoFilename = `GoogleMeet-Recording-${suffix}-${timestamp}.${ext}`;
         const txtFilename = `GoogleMeet-Transcript-${suffix}-${timestamp}.txt`;
         const vttFilename = `GoogleMeet-Transcript-${suffix}-${timestamp}.vtt`;
+        const attendanceFilename = `GoogleMeet-Attendance-${suffix}-${timestamp}.csv`;
 
         const videoBlobUrl = URL.createObjectURL(finalVideoBlob);
         const txtBlobUrl = URL.createObjectURL(txtBlob);
         const vttBlobUrl = URL.createObjectURL(vttBlob);
+        const attendanceBlobUrl = URL.createObjectURL(attendanceBlob);
 
         // Data URLs as bulletproof fallback that survives context isolation
         const txtDataUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(txtContent)}`;
         const vttDataUrl = `data:text/vtt;charset=utf-8,${encodeURIComponent(vttContent)}`;
+        const attendanceDataUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(attendanceCsv)}`;
 
         await recorderDB.updateSessionStatus(finishedSessionId, 'COMPLETED', Date.now());
 
@@ -605,13 +625,18 @@ async function prepareAndRecord(streamId: string, source: 'tab' | 'desktop' = 't
           vttDataUrl,
           vttFilename,
           vttContent,
+          attendanceBlobUrl,
+          attendanceDataUrl,
+          attendanceFilename,
+          attendanceContent: attendanceCsv,
         });
 
-        log('OFFSCREEN_SAVE dispatched for video, text transcript, and subtitles');
+        log('OFFSCREEN_SAVE dispatched for video, text transcript, subtitles, and attendance sheet');
       } catch (err) {
         log('Finalization error:', err);
       } finally {
         pendingChunkWrites.clear();
+        pendingAttendance = [];
         // With tab capture, Chrome auto-mutes the tab — keep the AudioContext→speakers
         // path alive so the user continues hearing remote participants after recording stops.
         const keepTab = currentCaptureSource === 'tab';
@@ -724,7 +749,12 @@ function cleanupStreams(keepTabAudio: boolean = false) {
   isMeetMuted = false;
 }
 
-function stopRecording() {
+let pendingAttendance: AttendeeRecord[] = [];
+
+function stopRecording(attendance?: AttendeeRecord[]) {
+  if (Array.isArray(attendance)) {
+    pendingAttendance = attendance;
+  }
   if (!mediaRecorder) {
     log('Stop called but no mediaRecorder instance exists');
     return;
@@ -769,7 +799,7 @@ function attachRpcListener(port: chrome.runtime.Port): void {
 
       if (msg?.type === 'OFFSCREEN_STOP') {
         try {
-          stopRecording();
+          stopRecording(msg?.attendance);
           return respond(msg, { ok: true });
         } catch (e: any) {
           return respond(msg, { ok: false, error: String(e?.message || e) });
@@ -855,6 +885,11 @@ function attachRpcListener(port: chrome.runtime.Port): void {
         if (typeof msg.vttBlobUrl === 'string') {
           try {
             URL.revokeObjectURL(msg.vttBlobUrl);
+          } catch {}
+        }
+        if (typeof msg.attendanceBlobUrl === 'string') {
+          try {
+            URL.revokeObjectURL(msg.attendanceBlobUrl);
           } catch {}
         }
         if (typeof msg.sessionId === 'string') {

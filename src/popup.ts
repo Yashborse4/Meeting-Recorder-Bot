@@ -17,6 +17,7 @@ const startBtn = document.getElementById('start-rec') as HTMLButtonElement | nul
 const pauseBtn = document.getElementById('pause-rec') as HTMLButtonElement | null;
 const resumeBtn = document.getElementById('resume-rec') as HTMLButtonElement | null;
 const stopBtn = document.getElementById('stop-rec') as HTMLButtonElement | null;
+const btnDownloadAttendance = document.getElementById('btn-download-attendance') as HTMLButtonElement | null;
 
 const statusPill = document.getElementById('status-pill') as HTMLDivElement | null;
 const statusText = document.getElementById('status-text') as HTMLSpanElement | null;
@@ -38,6 +39,7 @@ const btnSettingsBack = document.getElementById('btn-settings-back') as HTMLButt
 const settingSaveVideo = document.getElementById('setting-save-video') as HTMLInputElement | null;
 const settingSaveTxt = document.getElementById('setting-save-txt') as HTMLInputElement | null;
 const settingSaveVtt = document.getElementById('setting-save-vtt') as HTMLInputElement | null;
+const settingSaveAttendance = document.getElementById('setting-save-attendance') as HTMLInputElement | null;
 const settingVideoQuality = document.getElementById('setting-video-quality') as HTMLSelectElement | null;
 const settingAutoMic = document.getElementById('setting-auto-mic') as HTMLInputElement | null;
 const settingNoiseSuppression = document.getElementById('setting-noise-suppression') as HTMLInputElement | null;
@@ -166,6 +168,7 @@ async function initSettings() {
   if (settingSaveVideo) settingSaveVideo.checked = current.saveVideo;
   if (settingSaveTxt) settingSaveTxt.checked = current.saveTxtTranscript;
   if (settingSaveVtt) settingSaveVtt.checked = current.saveVttSubtitles;
+  if (settingSaveAttendance) settingSaveAttendance.checked = !!current.saveAttendance;
   if (settingVideoQuality) settingVideoQuality.value = current.videoQuality;
   if (settingAutoMic) settingAutoMic.checked = current.autoMixMic;
   if (settingNoiseSuppression) settingNoiseSuppression.checked = current.noiseSuppression;
@@ -176,6 +179,7 @@ async function initSettings() {
       saveVideo: settingSaveVideo ? settingSaveVideo.checked : true,
       saveTxtTranscript: settingSaveTxt ? settingSaveTxt.checked : true,
       saveVttSubtitles: settingSaveVtt ? settingSaveVtt.checked : true,
+      saveAttendance: settingSaveAttendance ? settingSaveAttendance.checked : false,
       videoQuality: (settingVideoQuality?.value as any) || '1080p',
       autoMixMic: settingAutoMic ? settingAutoMic.checked : true,
       noiseSuppression: settingNoiseSuppression ? settingNoiseSuppression.checked : true,
@@ -190,7 +194,7 @@ async function initSettings() {
     toast('Settings saved');
   };
 
-  [settingSaveVideo, settingSaveTxt, settingSaveVtt, settingAutoMic, settingNoiseSuppression, settingAutoStop].forEach(
+  [settingSaveVideo, settingSaveTxt, settingSaveVtt, settingSaveAttendance, settingAutoMic, settingNoiseSuppression, settingAutoStop].forEach(
     (el) => el?.addEventListener('change', saveCurrent)
   );
   settingVideoQuality?.addEventListener('change', saveCurrent);
@@ -302,6 +306,22 @@ recoverBtn?.addEventListener('click', async () => {
           saveAs: false,
         });
       }
+
+      if (recoverySettings.saveAttendance && sess.attendance?.length) {
+        const attContent = recorderDB.generateAttendanceCSV(
+          sess.attendance,
+          suffix,
+          sess.startedAt,
+          sess.endedAt || Date.now()
+        );
+        const attBlob = new Blob([attContent], { type: 'text/csv;charset=utf-8' });
+        const attUrl = URL.createObjectURL(attBlob);
+        chrome.downloads.download({
+          url: attUrl,
+          filename: `GoogleMeet-Recovered-Attendance-${suffix}-${timestamp}.csv`,
+          saveAs: false,
+        });
+      }
     });
 
     // Cleanup session from IndexedDB after downloads initiate
@@ -311,7 +331,7 @@ recoverBtn?.addEventListener('click', async () => {
 
     if (recoveryCard) recoveryCard.style.display = 'none';
     pendingRecoverySession = null;
-    toast('Orphaned recording and transcript successfully recovered.');
+    toast('Orphaned recording and data successfully recovered.');
   } catch (err) {
     console.error('[popup] Recovery failed:', err);
     alert(`Could not recover recording: ${err}`);
@@ -355,6 +375,9 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
   if (msg?.type === 'TRANSCRIPT_SAVED') {
     toast(`Transcript saved: ${msg.filename || 'transcript.txt'}`);
+  }
+  if (msg?.type === 'ATTENDANCE_SAVED') {
+    toast(`Attendance saved: ${msg.filename || 'attendance.csv'}`);
   }
   if (msg?.type === 'MIC_PERMISSION_GRANTED') {
     if (toggleMic) toggleMic.checked = true;
@@ -454,6 +477,29 @@ startBtn?.addEventListener('click', async () => {
       });
       source = 'tab';
     } catch (tabErr: any) {
+      // "Cannot capture a tab with an active stream" means the tab is already being
+      // captured — likely the offscreen document is still alive after a service worker
+      // restart that wiped in-memory state. Re-query the background and sync the UI
+      // instead of showing the desktop-capture picker.
+      const errMsg: string = tabErr?.message || String(tabErr);
+      if (errMsg.toLowerCase().includes('active stream')) {
+        console.warn('[popup] tabCapture: tab already has active stream — re-syncing state with background');
+        try {
+          const recheck = await chrome.runtime.sendMessage({ type: 'GET_RECORDING_STATUS' });
+          if (recheck?.recording) {
+            setUI(true, recheck.startedAt, !!recheck.paused, recheck.realStartTime);
+            return;
+          }
+        } catch {}
+        // If background also says "not recording", the old stream is stale/orphaned.
+        // Surface a clear error rather than opening a confusing screen-share picker.
+        throw new Error(
+          'This tab already has an active capture stream. ' +
+          'If a recording is in progress, please stop it first. ' +
+          'Otherwise, refreshing the Google Meet tab should clear the stale stream.'
+        );
+      }
+
       console.warn('[popup] tabCapture.getMediaStreamId failed, trying desktopCapture prompt:', tabErr);
       streamId = await new Promise<string>((resolve, reject) => {
         chrome.desktopCapture.chooseDesktopMedia(['tab', 'audio'], tab, (id?: string) => {
@@ -535,5 +581,103 @@ resumeBtn?.addEventListener('click', async () => {
     console.error(e);
   } finally {
     inFlight = false;
+  }
+});
+
+// Download Attendance (Excel / CSV) button handler
+btnDownloadAttendance?.addEventListener('click', async () => {
+  if (!btnDownloadAttendance || inFlight) return;
+  const origText = btnDownloadAttendance.innerHTML;
+  btnDownloadAttendance.disabled = true;
+  btnDownloadAttendance.innerHTML = `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10" stroke-opacity="0.25"/>
+      <path d="M12 2a10 10 0 0 1 10 10"/>
+    </svg>
+    Exporting…
+  `;
+
+  try {
+    // 1. Check active tab or query open Google Meet tabs
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    let targetTab = activeTab?.url && activeTab.url.includes('meet.google.com') ? activeTab : null;
+
+    if (!targetTab) {
+      const meetTabs = await chrome.tabs.query({ url: 'https://meet.google.com/*' });
+      if (meetTabs.length > 0) targetTab = meetTabs[0];
+    }
+
+    let attendanceList: any[] = [];
+    let meetingTitle = 'google-meet';
+
+    if (targetTab?.id) {
+      try {
+        const res = await new Promise<any>((resolve) => {
+          chrome.tabs.sendMessage(targetTab!.id!, { type: 'GET_ATTENDANCE' }, (r) => {
+            if (chrome.runtime.lastError || !r) resolve(null);
+            else resolve(r);
+          });
+          setTimeout(() => resolve(null), 1500);
+        });
+        if (res?.attendance && Array.isArray(res.attendance)) {
+          attendanceList = res.attendance;
+          if (res.meetingId) meetingTitle = res.meetingId;
+        }
+      } catch (err) {
+        console.warn('[popup] Could not query attendance from tab:', err);
+      }
+    }
+
+    // 2. If no active tab participants found, check latest saved session from DB
+    if (attendanceList.length === 0) {
+      try {
+        const sessions = await recorderDB.getOrphanedSessions();
+        if (sessions.length > 0 && sessions[0].attendance?.length) {
+          attendanceList = sessions[0].attendance;
+          meetingTitle = sessions[0].meetingId || meetingTitle;
+        }
+      } catch {}
+    }
+
+    if (attendanceList.length === 0) {
+      alert(
+        'No participants detected yet.\n\n' +
+        'Please join or switch to an active Google Meet call before downloading attendance.'
+      );
+      return;
+    }
+
+    // 3. Generate Excel-compatible CSV with UTF-8 BOM
+    const csvContent = recorderDB.generateAttendanceCSV(
+      attendanceList,
+      meetingTitle,
+      Date.now() - 60000,
+      Date.now()
+    );
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+    const blobUrl = URL.createObjectURL(blob);
+    const sanitizedTitle = meetingTitle.replace(/[/\\?%*:|"<>]/g, '-');
+    const filename = `GoogleMeet-Attendance-${sanitizedTitle}-${Date.now()}.csv`;
+
+    chrome.downloads.download({
+      url: blobUrl,
+      filename,
+      saveAs: true,
+    }, (downloadId) => {
+      if (chrome.runtime.lastError) {
+        console.error('[popup] Download failed:', chrome.runtime.lastError.message);
+        alert(`Failed to download attendance sheet: ${chrome.runtime.lastError.message}`);
+      } else {
+        toast(`Attendance exported (${attendanceList.length} attendees, id=${downloadId})`);
+      }
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    });
+  } catch (e: any) {
+    console.error('[popup] Export attendance error:', e);
+    alert(`Could not download attendance:\n${e?.message || e}`);
+  } finally {
+    btnDownloadAttendance.disabled = false;
+    btnDownloadAttendance.innerHTML = origText;
   }
 });
