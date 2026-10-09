@@ -610,10 +610,11 @@ btnDownloadAttendance?.addEventListener('click', async () => {
     let attendanceList: any[] = [];
     let meetingTitle = 'google-meet';
 
-    if (targetTab?.id) {
+    if (typeof targetTab?.id === 'number') {
+      const tabId = targetTab.id;
       try {
         const res = await new Promise<any>((resolve) => {
-          chrome.tabs.sendMessage(targetTab!.id!, { type: 'GET_ATTENDANCE' }, (r) => {
+          chrome.tabs.sendMessage(tabId, { type: 'GET_ATTENDANCE' }, (r) => {
             if (chrome.runtime.lastError || !r) resolve(null);
             else resolve(r);
           });

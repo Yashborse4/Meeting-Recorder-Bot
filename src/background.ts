@@ -447,26 +447,26 @@ chrome.commands?.onCommand.addListener(async (command) => {
   if (command === 'toggle-recording') {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id || !tab.url?.includes('meet.google.com')) return;
+    const tabId = tab.id;
+
     if (lastKnownRecording) {
       let attendanceData: any[] = [];
-      if (tab?.id) {
-        try {
-          await chrome.tabs.sendMessage(tab.id, { type: 'FLUSH_CAPTIONS' });
-        } catch {}
-        try {
-          const attResp = await new Promise<any>((resolve) => {
-            chrome.tabs.sendMessage(tab.id, { type: 'GET_ATTENDANCE' }, (res) => {
-              if (chrome.runtime.lastError || !res) resolve(null);
-              else resolve(res);
-            });
-            setTimeout(() => resolve(null), 300);
+      try {
+        await chrome.tabs.sendMessage(tabId, { type: 'FLUSH_CAPTIONS' });
+      } catch {}
+      try {
+        const attResp = await new Promise<any>((resolve) => {
+          chrome.tabs.sendMessage(tabId, { type: 'GET_ATTENDANCE' }, (res) => {
+            if (chrome.runtime.lastError || !res) resolve(null);
+            else resolve(res);
           });
-          if (attResp?.attendance && Array.isArray(attResp.attendance)) {
-            attendanceData = attResp.attendance;
-          }
-        } catch {}
-        await wait(100);
-      }
+          setTimeout(() => resolve(null), 300);
+        });
+        if (attResp?.attendance && Array.isArray(attResp.attendance)) {
+          attendanceData = attResp.attendance;
+        }
+      } catch {}
+      await wait(100);
       if (offscreenPort) await postToOffscreen({ type: 'OFFSCREEN_STOP', attendance: attendanceData });
     } else {
       try {
@@ -500,7 +500,7 @@ chrome.commands?.onCommand.addListener(async (command) => {
           broadcastState(true);
 
           // Follow-up query in case of late UI load
-          chrome.tabs.sendMessage(tab.id, { type: 'QUERY_MUTE_STATE' }, (res) => {
+          chrome.tabs.sendMessage(tabId, { type: 'QUERY_MUTE_STATE' }, (res) => {
             if (chrome.runtime.lastError) return;
             if (res && typeof res.isMuted === 'boolean') {
               try { offscreenPort?.postMessage({ type: 'MEET_MUTE_TOGGLED', isMuted: res.isMuted }); } catch {}
@@ -831,13 +831,14 @@ async function handleStopRecording(msg: any, sendResponse: (res: any) => void) {
     }
 
     let attendanceData: any[] = [];
-    if (activeRecordingTabId) {
+    if (typeof activeRecordingTabId === 'number') {
+      const recTabId = activeRecordingTabId;
       try {
-        await chrome.tabs.sendMessage(activeRecordingTabId, { type: 'FLUSH_CAPTIONS' });
+        await chrome.tabs.sendMessage(recTabId, { type: 'FLUSH_CAPTIONS' });
       } catch {}
       try {
         const attResp = await new Promise<any>((resolve) => {
-          chrome.tabs.sendMessage(activeRecordingTabId!, { type: 'GET_ATTENDANCE' }, (res) => {
+          chrome.tabs.sendMessage(recTabId, { type: 'GET_ATTENDANCE' }, (res) => {
             if (chrome.runtime.lastError || !res) resolve(null);
             else resolve(res);
           });
