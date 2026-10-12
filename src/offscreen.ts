@@ -54,7 +54,14 @@ function connectPort(): chrome.runtime.Port {
       p.postMessage({ type: 'OFFSCREEN_READY' });
       log('READY signaled via Port');
       if (capturing) {
-        pushState(true, { sessionId: activeSessionId, startedAt: getEffectiveStartTime(), realStartTime: sessionStartTime, paused: isPaused });
+        pushState(true, {
+          sessionId: activeSessionId,
+          tabId: activeTabId,
+          meetingId: activeMeetingId,
+          startedAt: getEffectiveStartTime(),
+          realStartTime: sessionStartTime,
+          paused: isPaused,
+        });
       }
     } catch (e) {
       log('Failed to signal READY:', e);
@@ -74,18 +81,28 @@ function respond(req: any, payload: any) {
 }
 
 function pushState(recording: boolean, extra?: Record<string, any>) {
-  getPort().postMessage({ type: 'RECORDING_STATE', recording, ...extra });
+  getPort().postMessage({
+    type: 'RECORDING_STATE',
+    recording,
+    tabId: activeTabId,
+    meetingId: activeMeetingId,
+    ...extra,
+  });
 }
 
 // Active recording state variables
 let mediaRecorder: MediaRecorder | null = null;
 let activeSessionId: string | null = null;
+let activeTabId: number | null = null;
+let activeMeetingId: string = 'google-meet';
 let sessionStartTime = 0;
 let chunkSequence = 0;
 let capturing = false;
 let isPaused = false;
 let totalPausedTime = 0;
 let lastPauseTime = 0;
+let finalizePromise: Promise<void> | null = null;
+let lastSavePayload: any = null;
 
 function getEffectiveStartTime() {
   const currentPause = isPaused && lastPauseTime > 0 ? (Date.now() - lastPauseTime) : 0;
@@ -105,6 +122,8 @@ setInterval(() => {
         recording: capturing,
         paused: isPaused,
         sessionId: activeSessionId,
+        tabId: activeTabId,
+        meetingId: activeMeetingId,
         startedAt: getEffectiveStartTime(),
         realStartTime: sessionStartTime,
       });
@@ -536,138 +555,149 @@ async function prepareAndRecord(
       }
     };
 
-    mediaRecorder!.onstop = async () => {
+    mediaRecorder!.onstop = () => {
       log('MediaRecorder stopped. Finalizing session...');
       const finishedSessionId = activeSessionId;
       const durationMs = Math.max(1000, getActiveDuration());
 
-      try {
-        if (!finishedSessionId) throw new Error('No active session ID on stop');
-
-        // CRITICAL: Await all in-flight chunk writes so final seconds are never truncated
-        if (pendingChunkWrites.size > 0) {
-          log(`Flushing ${pendingChunkWrites.size} in-flight chunk write(s) before assembly...`);
-          await Promise.all(Array.from(pendingChunkWrites));
-          log('All chunk writes committed to IndexedDB');
-        }
-
-        await recorderDB.updateSessionStatus(finishedSessionId, 'FINALIZING', Date.now());
-
-        // 1. Memory-safe chunk assembly from IndexedDB
-        log('Assembling video blob via IndexedDB cursor...');
-        const rawBlob = await recorderDB.assembleSessionBlob(finishedSessionId, mime);
-        
-        // 2. Format-aware duration / seekability handling
-        let finalVideoBlob = rawBlob;
-        const isWebm = mime.includes('webm');
-        if (isWebm) {
-          log(`Patching EBML duration for WebM (${durationMs}ms)...`);
-          finalVideoBlob = await fixWebmDuration(rawBlob, durationMs);
-          log(`EBML patched: seekable blob size=${finalVideoBlob.size} bytes`);
-        } else {
-          log(`MP4 container assembled: size=${finalVideoBlob.size} bytes`);
-        }
-
-        // 3. Subtitle and Plain Text Transcript compilation
-        const vttContent = await recorderDB.generateWebVTT(finishedSessionId);
-        const vttBlob = new Blob([vttContent], { type: 'text/vtt' });
-
-        const txtContent = await recorderDB.generatePlainText(finishedSessionId);
-        const txtBlob = new Blob([txtContent], { type: 'text/plain' });
-
-        // 4. Attendance Sheet compilation
-        const sessionAttendance = pendingAttendance.length > 0
-          ? pendingAttendance
-          : await recorderDB.getAttendance(finishedSessionId);
-
-        if (pendingAttendance.length > 0) {
-          await recorderDB.saveAttendance(finishedSessionId, pendingAttendance).catch(() => {});
-        }
-
-        const attendanceCsv = recorderDB.generateAttendanceCSV(
-          sessionAttendance,
-          meetingId || 'google-meet',
-          sessionStartTime,
-          Date.now()
-        );
-        const attendanceBlob = new Blob([attendanceCsv], { type: 'text/csv;charset=utf-8' });
-
-        // Filenames
-        const suffix = (meetingId || 'google-meet').replace(/[/\\?%*:|"<>]/g, '-');
-
-        const timestamp = Date.now();
-        const ext = mime.includes('mp4') ? 'mp4' : 'webm';
-        const videoFilename = `GoogleMeet-Recording-${suffix}-${timestamp}.${ext}`;
-        const txtFilename = `GoogleMeet-Transcript-${suffix}-${timestamp}.txt`;
-        const vttFilename = `GoogleMeet-Transcript-${suffix}-${timestamp}.vtt`;
-        const attendanceFilename = `GoogleMeet-Attendance-${suffix}-${timestamp}.csv`;
-
-        const videoBlobUrl = URL.createObjectURL(finalVideoBlob);
-        const txtBlobUrl = URL.createObjectURL(txtBlob);
-        const vttBlobUrl = URL.createObjectURL(vttBlob);
-        const attendanceBlobUrl = URL.createObjectURL(attendanceBlob);
-
-        // Data URLs as bulletproof fallback that survives context isolation
-        const txtDataUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(txtContent)}`;
-        const vttDataUrl = `data:text/vtt;charset=utf-8,${encodeURIComponent(vttContent)}`;
-        const attendanceDataUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(attendanceCsv)}`;
-
-        await recorderDB.updateSessionStatus(finishedSessionId, 'COMPLETED', Date.now());
-
-        const savePayload = {
-          type: 'OFFSCREEN_SAVE',
-          sessionId: finishedSessionId,
-          videoBlobUrl,
-          videoFilename,
-          txtBlobUrl,
-          txtDataUrl,
-          txtFilename,
-          vttBlobUrl,
-          vttDataUrl,
-          vttFilename,
-          attendanceBlobUrl,
-          attendanceDataUrl,
-          attendanceFilename,
-        };
-
-        // Transmit save instructions to background via both runtime.sendMessage (reliably wakes suspended MV3 SW) and port
+      finalizePromise = (async () => {
         try {
-          chrome.runtime.sendMessage(savePayload).catch(() => {});
-        } catch {}
-        try {
-          portRef?.postMessage(savePayload);
-        } catch {}
+          if (!finishedSessionId) throw new Error('No active session ID on stop');
 
-        log('OFFSCREEN_SAVE dispatched for video, text transcript, subtitles, and attendance sheet');
-      } catch (err) {
-        log('Finalization error:', err);
-      } finally {
-        pendingChunkWrites.clear();
-        pendingAttendance = [];
-        // With tab capture, Chrome auto-mutes the tab — keep the AudioContext→speakers
-        // path alive so the user continues hearing remote participants after recording stops.
-        const keepTab = currentCaptureSource === 'tab';
-        cleanupStreams(keepTab);
-        capturing = false;
-        isPaused = false;
-        activeSessionId = null;
-        pushState(false);
+          // CRITICAL: Await all in-flight chunk writes so final seconds are never truncated
+          if (pendingChunkWrites.size > 0) {
+            log(`Flushing ${pendingChunkWrites.size} in-flight chunk write(s) before assembly...`);
+            await Promise.all(Array.from(pendingChunkWrites));
+            log('All chunk writes committed to IndexedDB');
+          }
 
-        // Deferred cleanup: when the tab audio track ends naturally (tab closed / navigated),
-        // tear down the remaining passthrough resources automatically.
-        if (keepTab && currentTabStream) {
-          const passThroughTrack = currentTabStream.getAudioTracks()[0];
-          if (passThroughTrack && passThroughTrack.readyState === 'live') {
-            passThroughTrack.addEventListener('ended', () => {
-              log('Tab audio passthrough track ended, cleaning up');
-              cleanupTabPassthrough();
-            }, { once: true });
+          await recorderDB.updateSessionStatus(finishedSessionId, 'FINALIZING', Date.now());
+
+          // 1. Memory-safe chunk assembly from IndexedDB
+          log('Assembling video blob via IndexedDB cursor...');
+          const rawBlob = await recorderDB.assembleSessionBlob(finishedSessionId, mime);
+          
+          // 2. Format-aware duration / seekability handling
+          let finalVideoBlob = rawBlob;
+          const isWebm = mime.includes('webm');
+          if (isWebm) {
+            log(`Patching EBML duration for WebM (${durationMs}ms)...`);
+            finalVideoBlob = await fixWebmDuration(rawBlob, durationMs);
+            log(`EBML patched: seekable blob size=${finalVideoBlob.size} bytes`);
           } else {
-            // Track already ended, clean up immediately
-            cleanupTabPassthrough();
+            log(`MP4 container assembled: size=${finalVideoBlob.size} bytes`);
+          }
+
+          // 3. Subtitle and Plain Text Transcript compilation
+          const vttContent = await recorderDB.generateWebVTT(finishedSessionId);
+          const vttBlob = new Blob([vttContent], { type: 'text/vtt' });
+
+          const txtContent = await recorderDB.generatePlainText(finishedSessionId);
+          const txtBlob = new Blob([txtContent], { type: 'text/plain' });
+
+          // 4. Attendance Sheet compilation
+          const sessionAttendance = pendingAttendance.length > 0
+            ? pendingAttendance
+            : await recorderDB.getAttendance(finishedSessionId);
+
+          if (pendingAttendance.length > 0) {
+            await recorderDB.saveAttendance(finishedSessionId, pendingAttendance).catch(() => {});
+          }
+
+          const attendanceCsv = recorderDB.generateAttendanceCSV(
+            sessionAttendance,
+            meetingId || 'google-meet',
+            sessionStartTime,
+            Date.now()
+          );
+          const attendanceBlob = new Blob([attendanceCsv], { type: 'text/csv;charset=utf-8' });
+
+          // Filenames
+          const suffix = (meetingId || 'google-meet').replace(/[/\\?%*:|"<>]/g, '-');
+
+          const timestamp = Date.now();
+          const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+          const videoFilename = `GoogleMeet-Recording-${suffix}-${timestamp}.${ext}`;
+          const txtFilename = `GoogleMeet-Transcript-${suffix}-${timestamp}.txt`;
+          const vttFilename = `GoogleMeet-Transcript-${suffix}-${timestamp}.vtt`;
+          const attendanceFilename = `GoogleMeet-Attendance-${suffix}-${timestamp}.csv`;
+
+          const videoBlobUrl = URL.createObjectURL(finalVideoBlob);
+          const txtBlobUrl = URL.createObjectURL(txtBlob);
+          const vttBlobUrl = URL.createObjectURL(vttBlob);
+          const attendanceBlobUrl = URL.createObjectURL(attendanceBlob);
+
+          // Data URLs as bulletproof fallback that survives context isolation
+          const txtDataUrl = `data:text/plain;charset=utf-8,${encodeURIComponent(txtContent)}`;
+          const vttDataUrl = `data:text/vtt;charset=utf-8,${encodeURIComponent(vttContent)}`;
+          const attendanceDataUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(attendanceCsv)}`;
+
+          await recorderDB.updateSessionStatus(finishedSessionId, 'COMPLETED', Date.now());
+
+          const savePayload = {
+            type: 'OFFSCREEN_SAVE',
+            sessionId: finishedSessionId,
+            videoBlobUrl,
+            videoFilename,
+            txtBlobUrl,
+            txtDataUrl,
+            txtFilename,
+            vttBlobUrl,
+            vttDataUrl,
+            vttFilename,
+            attendanceBlobUrl,
+            attendanceDataUrl,
+            attendanceFilename,
+          };
+
+          lastSavePayload = savePayload;
+
+          // Transmit save instructions to background via both runtime.sendMessage (reliably wakes suspended MV3 SW) and port
+          for (let attempt = 0; attempt < 4; attempt++) {
+            let acked = false;
+            try {
+              const res = await chrome.runtime.sendMessage(savePayload);
+              if (res?.ok) acked = true;
+            } catch {}
+            try {
+              getPort().postMessage(savePayload);
+            } catch {}
+            if (acked) break;
+            await new Promise((r) => setTimeout(r, 250));
+          }
+
+          log('OFFSCREEN_SAVE dispatched for video, text transcript, subtitles, and attendance sheet');
+        } catch (err) {
+          log('Finalization error:', err);
+        } finally {
+          pendingChunkWrites.clear();
+          pendingAttendance = [];
+          // With tab capture, Chrome auto-mutes the tab — keep the AudioContext→speakers
+          // path alive so the user continues hearing remote participants after recording stops.
+          const keepTab = currentCaptureSource === 'tab';
+          cleanupStreams(keepTab);
+          capturing = false;
+          isPaused = false;
+          activeSessionId = null;
+          activeTabId = null;
+          pushState(false);
+
+          // Deferred cleanup: when the tab audio track ends naturally (tab closed / navigated),
+          // tear down the remaining passthrough resources automatically.
+          if (keepTab && currentTabStream) {
+            const passThroughTrack = currentTabStream.getAudioTracks()[0];
+            if (passThroughTrack && passThroughTrack.readyState === 'live') {
+              passThroughTrack.addEventListener('ended', () => {
+                log('Tab audio passthrough track ended, cleaning up');
+                cleanupTabPassthrough();
+              }, { once: true });
+            } else {
+              // Track already ended, clean up immediately
+              cleanupTabPassthrough();
+            }
           }
         }
-      }
+      })();
     };
   });
 
@@ -825,6 +855,9 @@ function revokeSessionResources(msg: any): void {
     }
   }
   if (typeof msg?.sessionId === 'string') {
+    if (lastSavePayload?.sessionId === msg.sessionId) {
+      lastSavePayload = null;
+    }
     log(`Storage cleanup for session ${msg.sessionId}`);
     recorderDB.deleteSession(msg.sessionId).catch((err) => log('Cleanup error:', err));
   }
@@ -846,8 +879,12 @@ function attachRpcListener(port: chrome.runtime.Port): void {
             return respond(msg, { ok: false, error: 'Already recording' });
           }
           pendingAttendance = [];
+          lastSavePayload = null;
+          finalizePromise = null;
+          activeTabId = typeof msg.tabId === 'number' ? msg.tabId : null;
+          activeMeetingId = meetingId;
           isMeetMuted = initialMuted;
-          log(`OFFSCREEN_START initialized with isMeetMuted=${isMeetMuted}`);
+          log(`OFFSCREEN_START initialized with isMeetMuted=${isMeetMuted}, tabId=${activeTabId}`);
           await prepareAndRecord(streamId, source, meetingId, msg.settings);
           return respond(msg, { ok: true, sessionId: activeSessionId });
         } catch (e: any) {
@@ -858,7 +895,10 @@ function attachRpcListener(port: chrome.runtime.Port): void {
       if (msg?.type === 'OFFSCREEN_STOP') {
         try {
           stopRecording(msg?.attendance);
-          return respond(msg, { ok: true });
+          if (finalizePromise) {
+            await finalizePromise.catch(() => {});
+          }
+          return respond(msg, { ok: true, savePayload: lastSavePayload });
         } catch (e: any) {
           return respond(msg, { ok: false, error: String(e?.message || e) });
         }
@@ -912,6 +952,8 @@ function attachRpcListener(port: chrome.runtime.Port): void {
           recording: capturing,
           paused: isPaused,
           sessionId: activeSessionId,
+          tabId: activeTabId,
+          meetingId: activeMeetingId,
           startedAt: getEffectiveStartTime(),
           realStartTime: sessionStartTime,
           attendance: pendingAttendance,

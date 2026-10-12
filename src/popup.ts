@@ -47,6 +47,7 @@ const settingAutoStop = document.getElementById('setting-auto-stop') as HTMLInpu
 const btnClearCache = document.getElementById('btn-clear-cache') as HTMLButtonElement | null;
 
 let liveTimerInterval: number | null = null;
+let currentEffectiveStart = 0;
 
 function formatDuration(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -82,20 +83,20 @@ function setUI(recording: boolean, startedAt?: number, paused = false, realStart
     }
     if (timerCard) timerCard.classList.add('active');
 
-    const effectiveStart = startedAt && startedAt > 0 ? startedAt : Date.now();
-    const resolvedRealStart = realStart && realStart > 0 ? realStart : effectiveStart;
+    currentEffectiveStart = startedAt && startedAt > 0 ? startedAt : (currentEffectiveStart || Date.now());
+    const resolvedRealStart = realStart && realStart > 0 ? realStart : currentEffectiveStart;
     if (startTimeInfo) {
       const timeStr = new Date(resolvedRealStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       startTimeInfo.innerHTML = `Started at: <strong>${timeStr}</strong>`;
     }
 
-    const elapsed = Date.now() - effectiveStart;
+    const elapsed = Date.now() - currentEffectiveStart;
     if (timerDigits) timerDigits.textContent = formatDuration(elapsed);
 
     if (!paused) {
       if (!liveTimerInterval) {
         liveTimerInterval = window.setInterval(() => {
-          const curElapsed = Date.now() - effectiveStart;
+          const curElapsed = Date.now() - currentEffectiveStart;
           if (timerDigits) timerDigits.textContent = formatDuration(curElapsed);
         }, 1000);
       }
@@ -122,6 +123,7 @@ function setUI(recording: boolean, startedAt?: number, paused = false, realStart
       clearInterval(liveTimerInterval);
       liveTimerInterval = null;
     }
+    currentEffectiveStart = 0;
   }
 }
 
@@ -312,8 +314,9 @@ recoverBtn?.addEventListener('click', async () => {
     chrome.downloads.download({
       url: videoUrl,
       filename: `GoogleMeet-Recovered-${suffix}-${timestamp}.${ext}`,
-      saveAs: true,
+      saveAs: false,
     }, () => {
+      let attUrl: string | null = null;
       if (recoverySettings.saveTxtTranscript) {
         chrome.downloads.download({
           url: txtUrl,
@@ -338,19 +341,23 @@ recoverBtn?.addEventListener('click', async () => {
           sess.endedAt || Date.now()
         );
         const attBlob = new Blob([attContent], { type: 'text/csv;charset=utf-8' });
-        const attUrl = URL.createObjectURL(attBlob);
+        attUrl = URL.createObjectURL(attBlob);
         chrome.downloads.download({
           url: attUrl,
           filename: `GoogleMeet-Recovered-Attendance-${suffix}-${timestamp}.csv`,
           saveAs: false,
         });
       }
-    });
 
-    // Cleanup session from IndexedDB after downloads initiate
-    setTimeout(async () => {
-      await recorderDB.deleteSession(sess.sessionId);
-    }, 10000);
+      // Cleanup session from IndexedDB and revoke object URLs after downloads initiate
+      setTimeout(async () => {
+        URL.revokeObjectURL(videoUrl);
+        URL.revokeObjectURL(txtUrl);
+        URL.revokeObjectURL(vttUrl);
+        if (attUrl) URL.revokeObjectURL(attUrl);
+        await recorderDB.deleteSession(sess.sessionId);
+      }, 10000);
+    });
 
     if (recoveryCard) recoveryCard.style.display = 'none';
     pendingRecoverySession = null;

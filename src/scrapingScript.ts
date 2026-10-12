@@ -188,11 +188,15 @@ function createFloatingBadge() {
 let isPaused = false;
 let isWaitingForRejoin = false;
 let hasJoinedCallInThisPageLoad = false;
+let rejoinedNotifiedForCurrentCall = false;
 
 function updateRecordingUI(recording: boolean, paused: boolean = false, waitingForRejoin: boolean = false) {
   isRecording = recording;
   isPaused = paused;
   isWaitingForRejoin = waitingForRejoin;
+  if (waitingForRejoin || !recording) {
+    rejoinedNotifiedForCurrentCall = false;
+  }
 
   if (recording && !paused) {
     requestScreenWakeLock().catch(() => {});
@@ -771,12 +775,12 @@ function checkForMeetingExit() {
   const inActiveCall = hasLeaveCallButton();
 
   if (inActiveCall) {
-    const wasNotJoinedYet = !hasJoinedCallInThisPageLoad;
     hasJoinedCallInThisPageLoad = true;
 
     // If we were waiting to rejoin (after page refresh or temporary leave) and are now back inside the call:
-    if (isRecording && (isWaitingForRejoin || wasNotJoinedYet)) {
+    if (isRecording && (isWaitingForRejoin || !rejoinedNotifiedForCurrentCall)) {
       isWaitingForRejoin = false;
+      rejoinedNotifiedForCurrentCall = true;
       console.log('[MeetContentScript] Active call detected after refresh/rejoin! Continuing recording...');
       chrome.runtime.sendMessage({
         type: 'MEETING_REJOINED',
@@ -827,6 +831,7 @@ function checkForMeetingExit() {
 
   if (isOnLeftScreen) {
     attachReturnHomeButtonListener();
+    rejoinedNotifiedForCurrentCall = false;
     if (!isWaitingForRejoin) {
       isWaitingForRejoin = true;
       console.log('[MeetContentScript] User left the meeting (Rejoin available). Pausing and waiting for rejoin...');

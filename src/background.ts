@@ -197,9 +197,9 @@ async function ensureOffscreen(): Promise<void> {
   throw new Error('Offscreen document did not become ready in time');
 }
 
-function handleOffscreenSave(msg: any) {
-  const saveKey = msg.sessionId || msg.videoFilename;
-  if (saveKey && savedSessionIds.has(saveKey)) {
+async function handleOffscreenSave(msg: any): Promise<void> {
+  const saveKey = msg?.sessionId || msg?.videoFilename;
+  if (!msg || (saveKey && savedSessionIds.has(saveKey))) {
     return;
   }
   if (saveKey) {
@@ -214,194 +214,166 @@ function handleOffscreenSave(msg: any) {
 
   bglog('OFFSCREEN_SAVE received: video =', videoFilename, ', transcript =', txtFilename, ', attendance =', attendanceFilename);
 
-  void (async () => {
-    const settings = await getSettings();
+  const settings = await getSettings();
 
-    const downloadTranscripts = () => {
-      // 1. Download readable plain-text transcript (.txt)
-      // Prefer blob URL: data URLs can exceed Chromium's ~2MB limit on long meetings
-      const txtUrl = msg.txtBlobUrl || msg.txtDataUrl;
-      if (txtUrl && settings.saveTxtTranscript) {
-        chrome.downloads.download(
-          {
-            url: txtUrl,
-            filename: txtFilename,
-            saveAs: false,
-          },
-          (txtId) => {
-            if (chrome.runtime.lastError) {
-              bglog('TXT transcript download error:', chrome.runtime.lastError.message);
-              // Retry with data URL fallback if blob URL failed
-              if (msg.txtDataUrl && txtUrl !== msg.txtDataUrl) {
-                bglog('Retrying TXT download with data URL fallback...');
-                chrome.downloads.download(
-                  { url: msg.txtDataUrl, filename: txtFilename, saveAs: false },
-                  (retryId) => {
-                    if (chrome.runtime.lastError) {
-                      bglog('TXT data URL fallback also failed:', chrome.runtime.lastError.message);
-                    } else {
-                      bglog(`TXT transcript download (fallback) initiated, id=${retryId}`);
-                      chrome.runtime.sendMessage({ type: 'TRANSCRIPT_SAVED', filename: txtFilename }).catch(() => {});
-                    }
-                  }
-                );
-              }
-            } else {
-              bglog(`TXT transcript download initiated, id=${txtId}`);
-              chrome.runtime.sendMessage({ type: 'TRANSCRIPT_SAVED', filename: txtFilename }).catch(() => {});
-            }
-          }
-        );
-      }
-
-      // 2. Download WebVTT subtitle track (.vtt)
-      // Prefer blob URL: data URLs can exceed Chromium's ~2MB limit on long meetings
-      const vttUrl = msg.vttBlobUrl || msg.vttDataUrl;
-      if (vttUrl && settings.saveVttSubtitles) {
-        chrome.downloads.download(
-          {
-            url: vttUrl,
-            filename: vttFilename,
-            saveAs: false,
-          },
-          (vttId) => {
-            if (chrome.runtime.lastError) {
-              bglog('VTT subtitle download error:', chrome.runtime.lastError.message);
-              // Retry with data URL fallback if blob URL failed
-              if (msg.vttDataUrl && vttUrl !== msg.vttDataUrl) {
-                bglog('Retrying VTT download with data URL fallback...');
-                chrome.downloads.download(
-                  { url: msg.vttDataUrl, filename: vttFilename, saveAs: false },
-                  (retryId) => {
-                    if (chrome.runtime.lastError) {
-                      bglog('VTT data URL fallback also failed:', chrome.runtime.lastError.message);
-                    } else {
-                      bglog(`VTT subtitle download (fallback) initiated, id=${retryId}`);
-                    }
-                  }
-                );
-              }
-            } else {
-              bglog(`VTT subtitle download initiated, id=${vttId}`);
-            }
-          }
-        );
-      }
-
-      // 3. Download Attendance Excel Sheet (.csv) if enabled in settings (default: off)
-      const attendanceUrl = msg.attendanceBlobUrl || msg.attendanceDataUrl;
-      if (attendanceUrl && settings.saveAttendance) {
-        chrome.downloads.download(
-          {
-            url: attendanceUrl,
-            filename: attendanceFilename,
-            saveAs: false,
-          },
-          (attId) => {
-            if (chrome.runtime.lastError) {
-              bglog('Attendance sheet download error:', chrome.runtime.lastError.message);
-              if (msg.attendanceDataUrl && attendanceUrl !== msg.attendanceDataUrl) {
-                chrome.downloads.download(
-                  { url: msg.attendanceDataUrl, filename: attendanceFilename, saveAs: false },
-                  (retryId) => {
-                    if (!chrome.runtime.lastError) {
-                      bglog(`Attendance sheet (fallback) initiated, id=${retryId}`);
-                      chrome.runtime.sendMessage({ type: 'ATTENDANCE_SAVED', filename: attendanceFilename }).catch(() => {});
-                    }
-                  }
-                );
-              }
-            } else {
-              bglog(`Attendance sheet download initiated, id=${attId}`);
-              chrome.runtime.sendMessage({ type: 'ATTENDANCE_SAVED', filename: attendanceFilename }).catch(() => {});
-            }
-          }
-        );
-      }
-    };
-
-    let activeDownloadId: number | null = null;
-    const cleanupSession = () => {
-      const revokePayload = {
-        type: 'REVOKE_BLOB_URL',
-        sessionId: msg.sessionId,
-        videoBlobUrl: msg.videoBlobUrl,
-        txtBlobUrl: msg.txtBlobUrl,
-        vttBlobUrl: msg.vttBlobUrl,
-        attendanceBlobUrl: msg.attendanceBlobUrl,
-      };
-      try {
-        offscreenPort?.postMessage(revokePayload);
-      } catch {}
-      try {
-        chrome.runtime.sendMessage(revokePayload).catch(() => {});
-      } catch {}
-    };
-
-    if (msg.videoBlobUrl && settings.saveVideo) {
+  const downloadTranscripts = () => {
+    // 1. Download readable plain-text transcript (.txt)
+    // Prefer blob URL: data URLs can exceed Chromium's ~2MB limit on long meetings
+    const txtUrl = msg.txtBlobUrl || msg.txtDataUrl;
+    if (txtUrl && settings.saveTxtTranscript) {
       chrome.downloads.download(
         {
-          url: msg.videoBlobUrl,
-          filename: videoFilename,
-          saveAs: true,
+          url: txtUrl,
+          filename: txtFilename,
+          saveAs: false,
         },
-        (downloadId) => {
+        (txtId) => {
           if (chrome.runtime.lastError) {
-            const errMsg = chrome.runtime.lastError.message || '';
-            bglog('Video download error or cancelled:', errMsg);
-            const isUserCanceled =
-              errMsg.includes('USER_CANCELED') ||
-              errMsg.toLowerCase().includes('canceled') ||
-              errMsg.toLowerCase().includes('cancelled');
-            // If SaveAs dialog failed because the tab/window was just closed, automatically fallback to saveAs: false
-            if (!isUserCanceled) {
-              bglog('Retrying video download with saveAs: false fallback after tab/window close...');
+            bglog('TXT transcript download error:', chrome.runtime.lastError.message);
+            if (msg.txtDataUrl && txtUrl !== msg.txtDataUrl) {
+              bglog('Retrying TXT download with data URL fallback...');
               chrome.downloads.download(
-                {
-                  url: msg.videoBlobUrl,
-                  filename: videoFilename,
-                  saveAs: false,
-                },
-                (retryDownloadId) => {
-                  if (!chrome.runtime.lastError) {
-                    activeDownloadId = retryDownloadId ?? null;
-                    bglog(`Video download (saveAs: false fallback) initiated, id=${retryDownloadId}`);
-                    chrome.runtime.sendMessage({ type: 'RECORDING_SAVED', filename: videoFilename }).catch(() => {});
+                { url: msg.txtDataUrl, filename: txtFilename, saveAs: false },
+                (retryId) => {
+                  if (chrome.runtime.lastError) {
+                    bglog('TXT data URL fallback also failed:', chrome.runtime.lastError.message);
                   } else {
-                    bglog('Video download fallback also failed:', chrome.runtime.lastError.message);
+                    bglog(`TXT transcript download (fallback) initiated, id=${retryId}`);
+                    chrome.runtime.sendMessage({ type: 'TRANSCRIPT_SAVED', filename: txtFilename }).catch(() => {});
                   }
                 }
               );
             }
           } else {
+            bglog(`TXT transcript download initiated, id=${txtId}`);
+            chrome.runtime.sendMessage({ type: 'TRANSCRIPT_SAVED', filename: txtFilename }).catch(() => {});
+          }
+        }
+      );
+    }
+
+    // 2. Download WebVTT subtitle track (.vtt)
+    const vttUrl = msg.vttBlobUrl || msg.vttDataUrl;
+    if (vttUrl && settings.saveVttSubtitles) {
+      chrome.downloads.download(
+        {
+          url: vttUrl,
+          filename: vttFilename,
+          saveAs: false,
+        },
+        (vttId) => {
+          if (chrome.runtime.lastError) {
+            bglog('VTT subtitle download error:', chrome.runtime.lastError.message);
+            if (msg.vttDataUrl && vttUrl !== msg.vttDataUrl) {
+              bglog('Retrying VTT download with data URL fallback...');
+              chrome.downloads.download(
+                { url: msg.vttDataUrl, filename: vttFilename, saveAs: false },
+                (retryId) => {
+                  if (chrome.runtime.lastError) {
+                    bglog('VTT data URL fallback also failed:', chrome.runtime.lastError.message);
+                  } else {
+                    bglog(`VTT subtitle download (fallback) initiated, id=${retryId}`);
+                  }
+                }
+              );
+            }
+          } else {
+            bglog(`VTT subtitle download initiated, id=${vttId}`);
+          }
+        }
+      );
+    }
+
+    // 3. Download Attendance Excel Sheet (.csv) if enabled in settings (default: off)
+    const attendanceUrl = msg.attendanceBlobUrl || msg.attendanceDataUrl;
+    if (attendanceUrl && settings.saveAttendance) {
+      chrome.downloads.download(
+        {
+          url: attendanceUrl,
+          filename: attendanceFilename,
+          saveAs: false,
+        },
+        (attId) => {
+          if (chrome.runtime.lastError) {
+            bglog('Attendance sheet download error:', chrome.runtime.lastError.message);
+            if (msg.attendanceDataUrl && attendanceUrl !== msg.attendanceDataUrl) {
+              chrome.downloads.download(
+                { url: msg.attendanceDataUrl, filename: attendanceFilename, saveAs: false },
+                (retryId) => {
+                  if (!chrome.runtime.lastError) {
+                    bglog(`Attendance sheet (fallback) initiated, id=${retryId}`);
+                    chrome.runtime.sendMessage({ type: 'ATTENDANCE_SAVED', filename: attendanceFilename }).catch(() => {});
+                  }
+                }
+              );
+            }
+          } else {
+            bglog(`Attendance sheet download initiated, id=${attId}`);
+            chrome.runtime.sendMessage({ type: 'ATTENDANCE_SAVED', filename: attendanceFilename }).catch(() => {});
+          }
+        }
+      );
+    }
+  };
+
+  let activeDownloadId: number | null = null;
+  const cleanupSession = () => {
+    const revokePayload = {
+      type: 'REVOKE_BLOB_URL',
+      sessionId: msg.sessionId,
+      videoBlobUrl: msg.videoBlobUrl,
+      txtBlobUrl: msg.txtBlobUrl,
+      vttBlobUrl: msg.vttBlobUrl,
+      attendanceBlobUrl: msg.attendanceBlobUrl,
+    };
+    try {
+      offscreenPort?.postMessage(revokePayload);
+    } catch {}
+    try {
+      chrome.runtime.sendMessage(revokePayload).catch(() => {});
+    } catch {}
+  };
+
+  if (msg.videoBlobUrl && settings.saveVideo) {
+    await new Promise<void>((resolve) => {
+      chrome.downloads.download(
+        {
+          url: msg.videoBlobUrl,
+          filename: videoFilename,
+          saveAs: false,
+        },
+        (downloadId) => {
+          if (chrome.runtime.lastError) {
+            bglog('Video download error:', chrome.runtime.lastError.message);
+          } else {
             activeDownloadId = downloadId ?? null;
             bglog(`Video download initiated, id=${downloadId}`);
             chrome.runtime.sendMessage({ type: 'RECORDING_SAVED', filename: videoFilename }).catch(() => {});
           }
-          // Automatically download transcript when saving video
           downloadTranscripts();
+          resolve();
         }
       );
-    } else {
-      downloadTranscripts();
-    }
+    });
+  } else {
+    downloadTranscripts();
+  }
 
-    // Track completion for safe memory cleanup
-    if (chrome.downloads?.onChanged) {
-      const downloadListener = (delta: chrome.downloads.DownloadDelta) => {
-        if (activeDownloadId && delta.id === activeDownloadId) {
-          if (delta.state && (delta.state.current === 'complete' || delta.state.current === 'interrupted')) {
-            setTimeout(cleanupSession, 10000);
-            chrome.downloads.onChanged.removeListener(downloadListener);
-          }
+  // Track completion for safe memory cleanup
+  if (chrome.downloads?.onChanged) {
+    const downloadListener = (delta: chrome.downloads.DownloadDelta) => {
+      if (activeDownloadId && delta.id === activeDownloadId) {
+        if (delta.state && (delta.state.current === 'complete' || delta.state.current === 'interrupted')) {
+          setTimeout(cleanupSession, 10000);
+          chrome.downloads.onChanged.removeListener(downloadListener);
         }
-      };
-      chrome.downloads.onChanged.addListener(downloadListener);
-    }
+      }
+    };
+    chrome.downloads.onChanged.addListener(downloadListener);
+  }
 
-    // Fallback cleanup timer (5 minutes)
-    setTimeout(cleanupSession, 300000);
-  })();
+  // Fallback cleanup timer (5 minutes)
+  setTimeout(cleanupSession, 300000);
 }
 
 // Service Worker Port Keep-Alive
@@ -418,56 +390,55 @@ chrome.runtime.onConnect.addListener((port) => {
     }
 
     if (msg?.type === 'RECORDING_STATE') {
-      lastKnownRecording = !!msg.recording;
-      if (typeof msg.paused === 'boolean') lastKnownPaused = msg.paused;
-      if (msg.sessionId) activeRecordingSessionId = msg.sessionId;
-      if (msg.startedAt) activeRecordingStartTime = msg.startedAt;
-      if (msg.realStartTime) activeRecordingRealStartTime = msg.realStartTime;
-      
-      if (!lastKnownRecording) {
-        activeRecordingTabId = null;
-        activeRecordingSessionId = null;
-        activeRecordingMeetingId = null;
-        activeRecordingStartTime = 0;
-        activeRecordingRealStartTime = 0;
-        isWaitingForRejoin = false;
-        autoPausedForRejoin = false;
-        if (rejoinGraceTimer) {
-          clearTimeout(rejoinGraceTimer);
-          rejoinGraceTimer = null;
+      void (async () => {
+        const isRec = !!msg.recording;
+        if (!isRec) {
+          lastKnownRecording = false;
+          lastKnownPaused = false;
+          activeRecordingTabId = null;
+          activeRecordingSessionId = null;
+          activeRecordingMeetingId = null;
+          activeRecordingStartTime = 0;
+          activeRecordingRealStartTime = 0;
+          isWaitingForRejoin = false;
+          autoPausedForRejoin = false;
+          if (rejoinGraceTimer) {
+            clearTimeout(rejoinGraceTimer);
+            rejoinGraceTimer = null;
+          }
+          broadcastState(false, { ...msg, waitingForRejoin: false });
+          return;
         }
-      } else if (activeRecordingTabId === null) {
-        // Service worker might have been suspended and lost activeRecordingTabId in memory.
-        // Recover it from session storage asynchronously.
-        try {
-          (chrome.storage as any)?.session?.get?.(
-            ['tabId', 'meetingId', 'waitingForRejoin', 'autoPausedForRejoin'],
-            (res: any) => {
-              if (res) {
-                if (res.tabId) activeRecordingTabId = res.tabId;
-                if (res.meetingId) activeRecordingMeetingId = res.meetingId;
-                if (typeof res.waitingForRejoin === 'boolean') isWaitingForRejoin = res.waitingForRejoin;
-                if (typeof res.autoPausedForRejoin === 'boolean') autoPausedForRejoin = res.autoPausedForRejoin;
-                bglog('Recovered activeRecordingTabId from session storage:', activeRecordingTabId);
-                broadcastState(lastKnownRecording, {
-                  ...msg,
-                  tabId: activeRecordingTabId,
-                  meetingId: activeRecordingMeetingId,
-                  waitingForRejoin: isWaitingForRejoin,
-                });
-              }
-            }
-          );
-        } catch {}
-      }
-      
-      broadcastState(lastKnownRecording, { ...msg, waitingForRejoin: isWaitingForRejoin });
+
+        // If service worker restarted and lost in-memory state, hydrate from session storage first
+        // BEFORE calling broadcastState so we never overwrite waitingForRejoin/tabId in storage!
+        if (activeRecordingTabId === null) {
+          await hydrateStateIfNeeded();
+        }
+
+        lastKnownRecording = true;
+        if (typeof msg.paused === 'boolean') lastKnownPaused = msg.paused;
+        if (msg.sessionId) activeRecordingSessionId = msg.sessionId;
+        if (typeof msg.tabId === 'number') activeRecordingTabId = msg.tabId;
+        if (msg.meetingId) activeRecordingMeetingId = msg.meetingId;
+        if (msg.startedAt) activeRecordingStartTime = msg.startedAt;
+        if (msg.realStartTime) activeRecordingRealStartTime = msg.realStartTime;
+
+        broadcastState(true, {
+          ...msg,
+          tabId: activeRecordingTabId,
+          meetingId: activeRecordingMeetingId,
+          waitingForRejoin: isWaitingForRejoin,
+        });
+      })();
     }
 
     if (msg?.type === 'OFFSCREEN_KEEPALIVE') {
       lastKnownRecording = !!msg.recording;
       if (typeof msg.paused === 'boolean') lastKnownPaused = msg.paused;
       if (msg.sessionId) activeRecordingSessionId = msg.sessionId;
+      if (typeof msg.tabId === 'number') activeRecordingTabId = msg.tabId;
+      if (msg.meetingId) activeRecordingMeetingId = msg.meetingId;
       if (msg.startedAt) activeRecordingStartTime = msg.startedAt;
       if (msg.realStartTime) activeRecordingRealStartTime = msg.realStartTime;
       return;
@@ -475,7 +446,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
     // Multi-file downloads (Video WebM/MP4 + Plain Text .txt transcript + WebVTT subtitles + Excel Attendance .csv)
     if (msg?.type === 'OFFSCREEN_SAVE') {
-      handleOffscreenSave(msg);
+      void handleOffscreenSave(msg);
     }
   });
 
@@ -561,7 +532,7 @@ async function hydrateStateIfNeeded(): Promise<void> {
           ensureOffscreen(),
           new Promise<void>((_, reject) => setTimeout(() => reject(new Error('ensureOffscreen timeout')), 3000)),
         ]);
-        if (offscreenPort && !lastKnownRecording) {
+        if (offscreenPort && (!lastKnownRecording || activeRecordingTabId === null)) {
           const st = await Promise.race([
             postToOffscreen({ type: 'OFFSCREEN_STATUS' }),
             new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
@@ -570,6 +541,8 @@ async function hydrateStateIfNeeded(): Promise<void> {
             lastKnownRecording = true;
             lastKnownPaused = !!st.paused;
             if (st.sessionId) activeRecordingSessionId = st.sessionId;
+            if (typeof st.tabId === 'number') activeRecordingTabId = st.tabId;
+            if (st.meetingId) activeRecordingMeetingId = st.meetingId;
             if (st.startedAt) activeRecordingStartTime = st.startedAt;
             if (st.realStartTime) activeRecordingRealStartTime = st.realStartTime;
           }
@@ -666,6 +639,24 @@ async function clearRejoinWaitState(resumeIfAutoPaused = false) {
   }
 }
 
+async function stopAndSaveRecording(attendance?: any[]): Promise<void> {
+  await clearRejoinWaitState(false);
+  try {
+    if (!offscreenPort) {
+      await ensureOffscreen();
+    }
+    if (offscreenPort) {
+      const r = await postToOffscreen({ type: 'OFFSCREEN_STOP', attendance });
+      bglog('OFFSCREEN_STOP response', r);
+      if (r?.savePayload) {
+        await handleOffscreenSave(r.savePayload);
+      }
+    }
+  } catch (e) {
+    bglog('stopAndSaveRecording error:', e);
+  }
+}
+
 async function enterRejoinWaitState(reason: string, graceMs = 120000) {
   await hydrateStateIfNeeded();
   if (!lastKnownRecording) return;
@@ -696,6 +687,13 @@ async function enterRejoinWaitState(reason: string, graceMs = 120000) {
     }
   }
 
+  // Re-verify tab did not close while awaiting OFFSCREEN_PAUSE
+  if (typeof activeRecordingTabId === 'number' && closingTabIds.has(activeRecordingTabId)) {
+    isWaitingForRejoin = false;
+    autoPausedForRejoin = false;
+    return;
+  }
+
   try {
     (chrome.storage as any)?.session?.set?.({
       waitingForRejoin: true,
@@ -716,14 +714,7 @@ async function enterRejoinWaitState(reason: string, graceMs = 120000) {
         return;
       }
       bglog('Rejoin grace period expired without rejoin. Auto-finalizing recording...');
-      isWaitingForRejoin = false;
-      autoPausedForRejoin = false;
-      try {
-        if (!offscreenPort) await ensureOffscreen();
-        await postToOffscreen({ type: 'OFFSCREEN_STOP' });
-      } catch (e) {
-        bglog('Failed to auto-stop after rejoin grace timeout:', e);
-      }
+      await stopAndSaveRecording();
     }
   }, graceMs);
 
@@ -734,9 +725,10 @@ async function enterRejoinWaitState(reason: string, graceMs = 120000) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // 0. Offscreen save fallback via runtime.sendMessage (reliably wakes suspended MV3 service worker on tab close)
   if (msg?.type === 'OFFSCREEN_SAVE') {
-    handleOffscreenSave(msg);
-    sendResponse({ ok: true });
-    return false;
+    handleOffscreenSave(msg)
+      .then(() => sendResponse({ ok: true }))
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
   }
 
   // 1. Synchronous / Fast handlers
@@ -755,6 +747,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             lastKnownRecording = !!st.recording;
             lastKnownPaused = !!st.paused;
             if (st.sessionId) activeRecordingSessionId = st.sessionId;
+            if (typeof st.tabId === 'number') activeRecordingTabId = st.tabId;
+            if (st.meetingId) activeRecordingMeetingId = st.meetingId;
             if (st.startedAt) activeRecordingStartTime = st.startedAt;
             if (st.realStartTime) activeRecordingRealStartTime = st.realStartTime;
             if (Array.isArray(st.attendance)) currentAttendance = st.attendance;
@@ -814,6 +808,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg?.type === 'PAGE_UNLOADING') {
+    if (offscreenPort && Array.isArray(msg.attendance) && msg.attendance.length > 0) {
+      try {
+        offscreenPort.postMessage({ type: 'OFFSCREEN_SYNC_ATTENDANCE', attendance: msg.attendance });
+      } catch {}
+    }
     void (async () => {
       await hydrateStateIfNeeded();
       if (offscreenPort && Array.isArray(msg.attendance) && msg.attendance.length > 0) {
@@ -822,8 +821,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } catch {}
       }
       const unloadingTabId = sender.tab?.id ?? activeRecordingTabId;
-      // Wait briefly to distinguish a page refresh from a tab close (beforeunload fires on both)
-      await wait(120);
+      if (typeof unloadingTabId === 'number' && closingTabIds.has(unloadingTabId)) {
+        return;
+      }
+
+      // Immediately pause and enter rejoin wait state so final frames are flushed before unload
+      // and fast page reloads immediately see waitingForRejoin = true
+      if (lastKnownRecording && (!unloadingTabId || unloadingTabId === activeRecordingTabId)) {
+        if (msg.meetingId && typeof msg.meetingId === 'string') {
+          activeRecordingMeetingId = msg.meetingId;
+        }
+        await enterRejoinWaitState('page_refresh', 120000);
+      }
+
+      // Check after a short delay whether the tab was actually closed rather than refreshed
+      await wait(150);
       if (typeof unloadingTabId === 'number') {
         if (closingTabIds.has(unloadingTabId)) return;
         try {
@@ -832,23 +844,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // Tab no longer exists (user closed the tab). Ensure recording is finalized and saved.
           const match = await checkRecordingTabMatch(unloadingTabId);
           if (match.isMatch && match.isRecording) {
-            await clearRejoinWaitState(false);
             const settings = await getSettings();
             if (settings.autoStopOnExit) {
-              try {
-                if (!offscreenPort) await ensureOffscreen();
-                await postToOffscreen({ type: 'OFFSCREEN_STOP', attendance: msg.attendance });
-              } catch {}
+              await stopAndSaveRecording(msg.attendance);
             }
           }
-          return;
         }
-      }
-      if (lastKnownRecording && (!unloadingTabId || unloadingTabId === activeRecordingTabId)) {
-        if (msg.meetingId && typeof msg.meetingId === 'string') {
-          activeRecordingMeetingId = msg.meetingId;
-        }
-        await enterRejoinWaitState('page_refresh', 120000);
       }
     })();
     sendResponse({ ok: true });
@@ -856,13 +857,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg?.type === 'MEETING_LEFT_WAITING_REJOIN') {
+    if (offscreenPort && Array.isArray(msg.attendance) && msg.attendance.length > 0) {
+      try {
+        offscreenPort.postMessage({ type: 'OFFSCREEN_SYNC_ATTENDANCE', attendance: msg.attendance });
+      } catch {}
+    }
     void (async () => {
       await hydrateStateIfNeeded();
-      if (offscreenPort && Array.isArray(msg.attendance) && msg.attendance.length > 0) {
-        try {
-          offscreenPort.postMessage({ type: 'OFFSCREEN_SYNC_ATTENDANCE', attendance: msg.attendance });
-        } catch {}
-      }
       if (lastKnownRecording && (!sender.tab?.id || sender.tab.id === activeRecordingTabId)) {
         if (msg.meetingId && typeof msg.meetingId === 'string') {
           activeRecordingMeetingId = msg.meetingId;
@@ -1045,7 +1046,15 @@ async function handleStartRecording(msg: any, sender: chrome.runtime.MessageSend
       } catch {}
 
       const settings = await getSettings();
-      const r = await postToOffscreen({ type: 'OFFSCREEN_START', streamId, source, meetingId, initialMuted, settings });
+      const r = await postToOffscreen({
+        type: 'OFFSCREEN_START',
+        tabId: targetTabId,
+        streamId,
+        source,
+        meetingId,
+        initialMuted,
+        settings,
+      });
       if (r?.ok) {
         activeRecordingTabId = targetTabId;
         activeRecordingSessionId = r.sessionId;
@@ -1105,8 +1114,6 @@ async function handleStopRecording(msg: any, sendResponse: (res: any) => void) {
       }
     }
 
-    await clearRejoinWaitState(false);
-
     let attendanceData: any[] = [];
     if (typeof activeRecordingTabId === 'number') {
       const recTabId = activeRecordingTabId;
@@ -1127,15 +1134,8 @@ async function handleStopRecording(msg: any, sendResponse: (res: any) => void) {
       } catch {}
       await wait(100);
     }
-    if (lastKnownRecording) {
-      if (!offscreenPort) {
-        try { await ensureOffscreen(); } catch {}
-      }
-      if (offscreenPort) {
-        const r = await postToOffscreen({ type: 'OFFSCREEN_STOP', attendance: attendanceData });
-        bglog('OFFSCREEN_STOP response', r);
-      }
-    }
+
+    await stopAndSaveRecording(attendanceData);
     sendResponse({ ok: true });
   } catch (e: any) {
     console.error('[background] Error handling STOP_RECORDING', e);
@@ -1143,29 +1143,14 @@ async function handleStopRecording(msg: any, sendResponse: (res: any) => void) {
   }
 }
 
-// Helper to check memory state or fallback to session storage for critical tab events
+// Helper to check memory state or fallback to session storage / offscreen for critical tab events
 async function checkRecordingTabMatch(tabId: number): Promise<{ isMatch: boolean, isRecording: boolean }> {
-  let targetTabId = activeRecordingTabId;
-  let isRecording = lastKnownRecording;
-  if (!isRecording || targetTabId === null) {
-    try {
-      const stored: any = await new Promise((resolve) => {
-        (chrome.storage as any)?.session?.get?.(['recording', 'tabId', 'meetingId'], (res: any) => resolve(res || {}));
-      });
-      if (stored?.recording) {
-        isRecording = true;
-        lastKnownRecording = true;
-      }
-      if (typeof stored?.tabId === 'number') {
-        targetTabId = stored.tabId;
-        activeRecordingTabId = stored.tabId;
-      }
-      if (stored?.meetingId && !activeRecordingMeetingId) {
-        activeRecordingMeetingId = stored.meetingId;
-      }
-    } catch {}
+  if (!lastKnownRecording || activeRecordingTabId === null) {
+    await hydrateStateIfNeeded();
   }
-  return { isMatch: tabId === targetTabId, isRecording };
+  const isRecording = lastKnownRecording || (await hasOffscreenContext());
+  const isMatch = activeRecordingTabId === null ? isRecording : tabId === activeRecordingTabId;
+  return { isMatch, isRecording };
 }
 
 // Auto-finalize recording if user closes the active recorded Meet tab
@@ -1175,19 +1160,14 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
   const match = await checkRecordingTabMatch(tabId);
   if (match.isMatch && match.isRecording) {
-    await clearRejoinWaitState(false);
     const settings = await getSettings();
     if (!settings.autoStopOnExit) {
+      await clearRejoinWaitState(false);
       bglog(`Recorded tab ${tabId} was closed, but autoStopOnExit is disabled in settings.`);
       return;
     }
-    bglog(`Recorded tab ${tabId} was closed. Auto-stopping recording...`);
-    try {
-      if (!offscreenPort) await ensureOffscreen();
-      await postToOffscreen({ type: 'OFFSCREEN_STOP' });
-    } catch (e) {
-      bglog('Failed to auto-stop on tab close:', e);
-    }
+    bglog(`Recorded tab ${tabId} was closed. Auto-stopping and saving recording...`);
+    await stopAndSaveRecording();
   }
 });
 
@@ -1199,10 +1179,14 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.url) {
     const isMeetDomain = changeInfo.url.includes('meet.google.com');
     const newMeetingId = extractMeetingId(changeInfo.url);
+    let pathname = '';
+    try {
+      pathname = new URL(changeInfo.url).pathname.replace(/^\/+|\/+$/g, '');
+    } catch {}
 
     // User left meet.google.com, OR returned to the Google Meet home/landing page,
     // OR switched to a completely different meeting code
-    const leftToHomePage = isMeetDomain && !newMeetingId;
+    const leftToHomePage = isMeetDomain && (pathname === '' || pathname === 'landing');
     const switchedDifferentMeeting =
       isMeetDomain &&
       !!newMeetingId &&
@@ -1217,13 +1201,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         return;
       }
       bglog(`Recorded tab ${tabId} navigated away from meeting (${changeInfo.url}). Auto-stopping...`);
-      await clearRejoinWaitState(false);
-      try {
-        if (!offscreenPort) await ensureOffscreen();
-        await postToOffscreen({ type: 'OFFSCREEN_STOP' });
-      } catch (e) {
-        bglog('Failed to auto-stop on tab navigation:', e);
-      }
+      await stopAndSaveRecording();
       return;
     }
   }
