@@ -79,7 +79,6 @@ function readElementId(buffer: Uint8Array, start: number): { id: number; length:
   return { id: id >>> 0, length };
 }
 
-const ID_EBML = 0x1a45dfa3;
 const ID_SEGMENT = 0x18538067;
 const ID_INFO = 0x1549a966;
 const ID_TIMECODESCALE = 0x2ad7b1;

@@ -53,7 +53,7 @@ class RecorderDatabase {
     this.dbPromise = new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
 
-      req.onupgradeneeded = (e: IDBVersionChangeEvent) => {
+      req.onupgradeneeded = () => {
         const db = req.result;
 
         // Sessions store

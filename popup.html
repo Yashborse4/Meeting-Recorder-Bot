@@ -289,31 +289,6 @@
         color: var(--text-muted);
       }
 
-      .btn-mic-enable {
-        padding: 5px 11px;
-        font-size: 11px;
-        font-weight: 600;
-        border-radius: 6px;
-        border: 1px solid var(--border);
-        background: var(--surface-hover);
-        color: var(--text);
-        cursor: pointer;
-        transition: all 0.15s ease;
-        white-space: nowrap;
-      }
-
-      .btn-mic-enable:hover:not(.granted) {
-        background: #3e4249;
-        border-color: #555963;
-      }
-
-      .btn-mic-enable.granted {
-        background: var(--green-bg);
-        border-color: rgba(35, 165, 90, 0.4);
-        color: #81c995;
-        cursor: default;
-      }
-
       /* Action Buttons */
       .actions-container {
         display: flex;
@@ -614,15 +589,6 @@
         font-size: 10px;
         color: var(--text-muted);
         margin-top: 10px;
-      }
-
-      .spin {
-        animation: spin 1s linear infinite;
-      }
-
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
       }
 
       .toast-popup {

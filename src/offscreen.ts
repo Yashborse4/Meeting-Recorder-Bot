@@ -9,9 +9,7 @@
 
 import { recorderDB, AttendeeRecord } from './db';
 import { fixWebmDuration } from './webmFix';
-import { getSettings } from './settings';
-
-const WANT_MIC_MIX = true;
+import { getSettings, ExtensionSettings } from './settings';
 
 window.addEventListener('error', (e) => {
   console.error('[offscreen] window.onerror', e?.message, e?.error);
@@ -219,9 +217,8 @@ async function updateMicState() {
 }
 
 // Microphone capture
-async function maybeGetMicStream(): Promise<MediaStream | null> {
-  if (!WANT_MIC_MIX) return null;
-  const settings = await getSettings();
+async function maybeGetMicStream(resolvedSettings?: ExtensionSettings): Promise<MediaStream | null> {
+  const settings = resolvedSettings || await getSettings();
   if (!settings.autoMixMic) return null;
 
   try {
@@ -264,7 +261,12 @@ async function maybeGetMicStream(): Promise<MediaStream | null> {
  * so we must NOT route tab audio to audioContext.destination (speakers) — only to the recorder.
  * When source is 'tab', Chrome auto-mutes the tab, so we route to speakers so user can hear.
  */
-async function setupAudioMixing(tabStream: MediaStream, micStream: MediaStream | null, source: 'tab' | 'desktop' = 'tab'): Promise<MediaStream> {
+async function setupAudioMixing(
+  tabStream: MediaStream,
+  micStream: MediaStream | null,
+  source: 'tab' | 'desktop' = 'tab',
+  resolvedSettings?: ExtensionSettings
+): Promise<MediaStream> {
   const tabAudio = tabStream.getAudioTracks()[0];
   const videoTracks = tabStream.getVideoTracks();
 
@@ -338,14 +340,14 @@ async function setupAudioMixing(tabStream: MediaStream, micStream: MediaStream |
   }
 
   // Enforce settings and Google Meet mute status
-  const settings = await getSettings();
+  const settings = resolvedSettings || await getSettings();
   isMicEnabledBySetting = !!settings.autoMixMic;
   updateMicState();
 
   return new MediaStream([...videoTracks, ...mixedDestNode.stream.getAudioTracks()]);
 }
 
-function makeConstraints(streamId: string, source: 'tab' | 'desktop', quality: '1080p' | '720p' | 'max' = '1080p'): MediaStreamConstraints {
+function makeConstraints(streamId: string, source: 'tab' | 'desktop', quality: ExtensionSettings['videoQuality'] = '1080p'): MediaStreamConstraints {
   const mandatory = { chromeMediaSource: source, chromeMediaSourceId: streamId } as any;
   let maxWidth = 1920;
   let maxHeight = 1080;
@@ -376,16 +378,19 @@ function makeConstraints(streamId: string, source: 'tab' | 'desktop', quality: '
   };
 }
 
-async function captureWithStreamId(streamId: string, source: 'tab' | 'desktop'): Promise<MediaStream> {
-  const settings = await getSettings();
-  log(`Capturing getUserMedia with streamId=${streamId} source=${source} quality=${settings.videoQuality}`);
+async function captureWithStreamId(
+  streamId: string,
+  source: 'tab' | 'desktop',
+  videoQuality: ExtensionSettings['videoQuality'] = '1080p'
+): Promise<MediaStream> {
+  log(`Capturing getUserMedia with streamId=${streamId} source=${source} quality=${videoQuality}`);
   try {
-    return await navigator.mediaDevices.getUserMedia(makeConstraints(streamId, source, settings.videoQuality));
+    return await navigator.mediaDevices.getUserMedia(makeConstraints(streamId, source, videoQuality));
   } catch (err: any) {
     log(`[gUM] Primary capture failed:`, err?.message || err);
     log(`[gUM] Retrying without audio constraints (user may have forgotten to check 'Share tab audio')...`);
     try {
-      const videoOnlyConstraints = makeConstraints(streamId, source, settings.videoQuality);
+      const videoOnlyConstraints = makeConstraints(streamId, source, videoQuality);
       videoOnlyConstraints.audio = false;
       return await navigator.mediaDevices.getUserMedia(videoOnlyConstraints);
     } catch (err2: any) {
@@ -394,18 +399,23 @@ async function captureWithStreamId(streamId: string, source: 'tab' | 'desktop'):
   }
 }
 
-async function prepareAndRecord(streamId: string, source: 'tab' | 'desktop' = 'tab', meetingId: string = 'google-meet'): Promise<void> {
+async function prepareAndRecord(
+  streamId: string,
+  source: 'tab' | 'desktop' = 'tab',
+  meetingId: string = 'google-meet',
+  initialSettings?: ExtensionSettings
+): Promise<void> {
   // Clean up any lingering tab audio passthrough from a previous recording session
   cleanupTabPassthrough();
 
   currentCaptureSource = source;
-  const settings = await getSettings();
+  const settings = initialSettings || await getSettings();
 
   // Parallel capture: tabCapture and mic getUserMedia in parallel eliminates the 1-2s audio dropout
   const shouldInitialRecordMic = settings.autoMixMic && !isMeetMuted;
   const [baseStream, micStream] = await Promise.all([
-    captureWithStreamId(streamId, source),
-    shouldInitialRecordMic ? maybeGetMicStream().catch((e) => {
+    captureWithStreamId(streamId, source, settings.videoQuality),
+    shouldInitialRecordMic ? maybeGetMicStream(settings).catch((e) => {
       log('Mic stream capture error (continuing tab-only):', e);
       return null;
     }) : Promise.resolve(null),
@@ -423,7 +433,7 @@ async function prepareAndRecord(streamId: string, source: 'tab' | 'desktop' = 't
     }
   }
 
-  const mixedStream = await setupAudioMixing(baseStream, micStream, source);
+  const mixedStream = await setupAudioMixing(baseStream, micStream, source, settings);
   currentMixedStream = mixedStream;
 
   // Final check on AudioContext
@@ -612,15 +622,12 @@ async function prepareAndRecord(streamId: string, source: 'tab' | 'desktop' = 't
           txtBlobUrl,
           txtDataUrl,
           txtFilename,
-          txtContent,
           vttBlobUrl,
           vttDataUrl,
           vttFilename,
-          vttContent,
           attendanceBlobUrl,
           attendanceDataUrl,
           attendanceFilename,
-          attendanceContent: attendanceCsv,
         };
 
         // Transmit save instructions to background via both runtime.sendMessage (reliably wakes suspended MV3 SW) and port
@@ -809,6 +816,20 @@ function stopRecording(attendance?: AttendeeRecord[]) {
   }
 }
 
+function revokeSessionResources(msg: any): void {
+  for (const key of ['videoBlobUrl', 'txtBlobUrl', 'vttBlobUrl', 'attendanceBlobUrl']) {
+    if (typeof msg?.[key] === 'string') {
+      try {
+        URL.revokeObjectURL(msg[key]);
+      } catch {}
+    }
+  }
+  if (typeof msg?.sessionId === 'string') {
+    log(`Storage cleanup for session ${msg.sessionId}`);
+    recorderDB.deleteSession(msg.sessionId).catch((err) => log('Cleanup error:', err));
+  }
+}
+
 // Port RPC listener — attached to every new port (including reconnections)
 function attachRpcListener(port: chrome.runtime.Port): void {
   port.onMessage.addListener(async (msg: any) => {
@@ -827,7 +848,7 @@ function attachRpcListener(port: chrome.runtime.Port): void {
           pendingAttendance = [];
           isMeetMuted = initialMuted;
           log(`OFFSCREEN_START initialized with isMeetMuted=${isMeetMuted}`);
-          await prepareAndRecord(streamId, source, meetingId);
+          await prepareAndRecord(streamId, source, meetingId, msg.settings);
           return respond(msg, { ok: true, sessionId: activeSessionId });
         } catch (e: any) {
           return respond(msg, { ok: false, error: `${e?.name || 'Error'}: ${e?.message || e}` });
@@ -932,30 +953,7 @@ function attachRpcListener(port: chrome.runtime.Port): void {
 
       // Storage Garbage Collection on confirmed download
       if (msg?.type === 'REVOKE_BLOB_URL') {
-        if (typeof msg.videoBlobUrl === 'string') {
-          try {
-            URL.revokeObjectURL(msg.videoBlobUrl);
-          } catch {}
-        }
-        if (typeof msg.txtBlobUrl === 'string') {
-          try {
-            URL.revokeObjectURL(msg.txtBlobUrl);
-          } catch {}
-        }
-        if (typeof msg.vttBlobUrl === 'string') {
-          try {
-            URL.revokeObjectURL(msg.vttBlobUrl);
-          } catch {}
-        }
-        if (typeof msg.attendanceBlobUrl === 'string') {
-          try {
-            URL.revokeObjectURL(msg.attendanceBlobUrl);
-          } catch {}
-        }
-        if (typeof msg.sessionId === 'string') {
-          log(`Storage cleanup for session ${msg.sessionId}`);
-          recorderDB.deleteSession(msg.sessionId).catch((err) => log('Cleanup error:', err));
-        }
+        revokeSessionResources(msg);
         return;
       }
 
@@ -1001,22 +999,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       return false;
     }
     if (msg?.type === 'REVOKE_BLOB_URL') {
-      if (typeof msg.videoBlobUrl === 'string') {
-        try { URL.revokeObjectURL(msg.videoBlobUrl); } catch {}
-      }
-      if (typeof msg.txtBlobUrl === 'string') {
-        try { URL.revokeObjectURL(msg.txtBlobUrl); } catch {}
-      }
-      if (typeof msg.vttBlobUrl === 'string') {
-        try { URL.revokeObjectURL(msg.vttBlobUrl); } catch {}
-      }
-      if (typeof msg.attendanceBlobUrl === 'string') {
-        try { URL.revokeObjectURL(msg.attendanceBlobUrl); } catch {}
-      }
-      if (typeof msg.sessionId === 'string') {
-        log(`Storage cleanup for session ${msg.sessionId}`);
-        recorderDB.deleteSession(msg.sessionId).catch((err) => log('Cleanup error:', err));
-      }
+      revokeSessionResources(msg);
       sendResponse({ ok: true });
       return false;
     }

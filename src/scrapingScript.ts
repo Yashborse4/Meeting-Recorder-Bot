@@ -7,14 +7,13 @@
 // - Auto-stop on call exit / disconnect ("You left the meeting" detection & beforeunload)
 // - Offline resilience (network dropout immunity)
 
+import type { AttendeeRecord } from './db';
+
 // --- State Variables ---
 let isRecording = false;
 let recordingStartTime = 0;
 let timerInterval: number | null = null;
 let lastKnownMuteState: boolean | null = null;
-
-// In-memory transcript buffer for manual popup export compatibility
-const transcriptBuffer: string[] = [];
 
 // --- Helper Functions ---
 function formatDuration(elapsedMs: number): string {
@@ -376,18 +375,15 @@ function checkMeetMuteState(force = false) {
 }
 
 // --- 4. Attendance & Participant Tracking ---
-export interface AttendeeRecord {
-  id: string;
-  name: string;
-  firstSeen: number;
-  lastSeen: number;
-  durationMs: number;
-  spokeCount: number;
-  lastSpokeAt: number | null;
-  isHost?: boolean;
-}
-
 const attendanceMap = new Map<string, AttendeeRecord>();
+
+function normalizeParticipantKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\s*\((you|presentation|guest|external|présentation|presentación|präsentation|apresentação|tu|vous|du)\)\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function registerParticipant(rawName: string, idHint?: string, isHost?: boolean): void {
   if (!rawName) return;
@@ -419,14 +415,7 @@ function registerParticipant(rawName: string, idHint?: string, isHost?: boolean)
   }
 
   // Canonical key normalization (ignores (You), (Presentation), localized suffixes, etc.)
-  const canonicalKey =
-    idHint ||
-    cleanName
-      .toLowerCase()
-      .replace(/\s*\((you|presentation|guest|external|présentation|presentación|präsentation|apresentação|tu|vous|du)\)\s*/gi, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
+  const canonicalKey = idHint || normalizeParticipantKey(cleanName);
   if (!canonicalKey) return;
 
   // Clean display name by stripping presentation suffixes
@@ -463,11 +452,7 @@ function registerSpeaker(speakerName: string): void {
   if (!trimmed || trimmed.toLowerCase() === 'speaker') return;
 
   registerParticipant(trimmed);
-  const canonicalKey = trimmed
-    .toLowerCase()
-    .replace(/\s*\((you|presentation|guest|external|présentation|presentación|präsentation|apresentação|tu|vous|du)\)\s*/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const canonicalKey = normalizeParticipantKey(trimmed);
 
   const att = attendanceMap.get(canonicalKey);
   if (att) {
@@ -535,13 +520,11 @@ function scanParticipants(): void {
 }
 
 // --- 5. Resilient Multi-Tier Caption Scraper ---
-interface Chunk {
-  startTime: number;
-  endTime: number;
+interface OpenChunk {
   speaker: string;
   text: string;
+  timer: number;
 }
-type OpenChunk = Chunk & { timer: number };
 
 const CHUNK_GRACE_MS = 2000;
 const prior = new Map<string, OpenChunk>();
@@ -563,14 +546,11 @@ function handleCaption(speakerKey: string, speakerName: string, rawText: string)
   if (prev === norm) return;
   lastSeen.set(speakerKey, norm);
 
-  const now = Date.now();
   const existing = prior.get(speakerKey);
 
   if (!existing) {
     const timer = window.setTimeout(() => commit(speakerKey), CHUNK_GRACE_MS);
     prior.set(speakerKey, {
-      startTime: now,
-      endTime: now,
       speaker: speakerName,
       text,
       timer,
@@ -578,7 +558,6 @@ function handleCaption(speakerKey: string, speakerName: string, rawText: string)
     return;
   }
 
-  existing.endTime = now;
   existing.text = text;
   existing.speaker = speakerName;
 
@@ -589,11 +568,6 @@ function handleCaption(speakerKey: string, speakerName: string, rawText: string)
 function commit(key: string) {
   const entry = prior.get(key);
   if (!entry) return;
-
-  const startTS = new Date(entry.startTime).toISOString();
-  const endTS = new Date(entry.endTime).toISOString();
-  const line = `[${startTS}] [${endTS}] ${entry.speaker} : ${entry.text}`.trim();
-  transcriptBuffer.push(line);
 
   // Relay to background/offscreen for MeetRecorderDB persistence
   chrome.runtime.sendMessage({
@@ -1137,21 +1111,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return false;
   }
 
-  if (msg?.type === 'GET_TRANSCRIPT' || msg?.type === 'FLUSH_CAPTIONS') {
+  if (msg?.type === 'FLUSH_CAPTIONS') {
     flushPendingCaptions();
-    sendResponse({ ok: true, transcript: transcriptBuffer.join('\n') });
+    sendResponse({ ok: true });
     return false;
   }
 
   if (msg?.type === 'RESET_TRANSCRIPT') {
     prior.clear();
     lastSeen.clear();
-    transcriptBuffer.length = 0;
     sendResponse({ ok: true });
     return false;
   }
 
-  if (msg?.type === 'GET_ATTENDANCE' || msg?.type === 'FLUSH_ATTENDANCE') {
+  if (msg?.type === 'GET_ATTENDANCE') {
     scanParticipants();
     const meetingId = getMeetingIdFromUrl();
     sendResponse({
@@ -1160,12 +1133,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       meetingId,
       timestamp: Date.now(),
     });
-    return false;
-  }
-
-  if (msg?.type === 'RESET_ATTENDANCE') {
-    attendanceMap.clear();
-    sendResponse({ ok: true });
     return false;
   }
 

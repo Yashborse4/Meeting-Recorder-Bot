@@ -625,76 +625,9 @@ chrome.commands?.onCommand.addListener(async (command) => {
     await hydrateStateIfNeeded();
 
     if (lastKnownRecording) {
-      let attendanceData: any[] = [];
-      try {
-        await chrome.tabs.sendMessage(tabId, { type: 'FLUSH_CAPTIONS' });
-      } catch {}
-      try {
-        const attResp = await new Promise<any>((resolve) => {
-          chrome.tabs.sendMessage(tabId, { type: 'GET_ATTENDANCE' }, (res) => {
-            if (chrome.runtime.lastError || !res) resolve(null);
-            else resolve(res);
-          });
-          setTimeout(() => resolve(null), 300);
-        });
-        if (attResp?.attendance && Array.isArray(attResp.attendance)) {
-          attendanceData = attResp.attendance;
-        }
-      } catch {}
-      await wait(100);
-      if (offscreenPort) await postToOffscreen({ type: 'OFFSCREEN_STOP', attendance: attendanceData });
+      await handleStopRecording({ type: 'STOP_RECORDING' }, () => {});
     } else {
-      try {
-        await ensureOffscreen();
-        const captureInfo = await getStreamIdForTab(tabId);
-        let meetingId = 'google-meet';
-        if (tab.url) {
-          meetingId = extractMeetingId(tab.url) || 'google-meet';
-        }
-
-        // Query current Meet mute state beforehand so offscreen starts with zero audio clipping
-        let initialMuted = false;
-        try {
-          const muteCheck = await new Promise<{ isMuted?: boolean }>((resolve) => {
-            chrome.tabs.sendMessage(tabId, { type: 'QUERY_MUTE_STATE' }, (res) => {
-              if (chrome.runtime.lastError || !res) resolve({});
-              else resolve(res);
-            });
-            setTimeout(() => resolve({}), 250);
-          });
-          if (typeof muteCheck.isMuted === 'boolean') initialMuted = muteCheck.isMuted;
-        } catch {}
-
-        const r = await postToOffscreen({ type: 'OFFSCREEN_START', streamId: captureInfo.streamId, source: captureInfo.source, meetingId, initialMuted });
-        if (r?.ok) {
-          activeRecordingTabId = tabId;
-          activeRecordingMeetingId = meetingId;
-          activeRecordingStartTime = Date.now();
-          activeRecordingRealStartTime = activeRecordingStartTime;
-          activeRecordingSessionId = r.sessionId;
-          isWaitingForRejoin = false;
-          autoPausedForRejoin = false;
-          try {
-            (chrome.storage as any)?.session?.set?.({
-              tabId,
-              meetingId,
-              waitingForRejoin: false,
-              autoPausedForRejoin: false,
-            });
-          } catch {}
-          broadcastState(true);
-
-          // Follow-up query in case of late UI load
-          chrome.tabs.sendMessage(tabId, { type: 'QUERY_MUTE_STATE' }, (res) => {
-            if (chrome.runtime.lastError) return;
-            if (res && typeof res.isMuted === 'boolean') {
-              try { offscreenPort?.postMessage({ type: 'MEET_MUTE_TOGGLED', isMuted: res.isMuted }); } catch {}
-            }
-          });
-        }
-      } catch (err) {
-        bglog('Shortcut start recording error:', err);
-      }
+      await handleStartRecording({ type: 'START_RECORDING', tabId }, {}, () => {});
     }
   }
 });
@@ -810,10 +743,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === 'GET_RECORDING_STATUS') {
     (async () => {
       let currentAttendance: any[] = [];
+      await hydrateStateIfNeeded();
+
       try {
-        const hasOff = await hasOffscreenContext();
-        if (hasOff && offscreenPort && offscreenReady) {
-          // Fast path: port is already connected, query with a short timeout
+        if (offscreenPort) {
           const st = await Promise.race([
             postToOffscreen({ type: 'OFFSCREEN_STATUS' }),
             new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
@@ -825,85 +758,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             if (st.startedAt) activeRecordingStartTime = st.startedAt;
             if (st.realStartTime) activeRecordingRealStartTime = st.realStartTime;
             if (Array.isArray(st.attendance)) currentAttendance = st.attendance;
-            // Restore tabId & rejoin state from session storage if SW restart wiped it from memory
-            if (lastKnownRecording && activeRecordingTabId === null) {
-              try {
-                const stored: any = await new Promise((resolve) => {
-                  (chrome.storage as any)?.session?.get?.(
-                    ['tabId', 'meetingId', 'waitingForRejoin', 'autoPausedForRejoin'],
-                    (r: any) => resolve(r || {})
-                  );
-                });
-                if (stored?.tabId) activeRecordingTabId = stored.tabId;
-                if (stored?.meetingId) activeRecordingMeetingId = stored.meetingId;
-                if (typeof stored?.waitingForRejoin === 'boolean') isWaitingForRejoin = stored.waitingForRejoin;
-                if (typeof stored?.autoPausedForRejoin === 'boolean') autoPausedForRejoin = stored.autoPausedForRejoin;
-              } catch {}
-            }
-          }
-        } else if (hasOff) {
-          // Slow path: port not connected yet, try to reconnect with timeout
-          try {
-            await Promise.race([
-              ensureOffscreen(),
-              new Promise<void>((_, reject) => setTimeout(() => reject(new Error('ensureOffscreen timeout')), 3000)),
-            ]);
-            const st = await Promise.race([
-              postToOffscreen({ type: 'OFFSCREEN_STATUS' }),
-              new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
-            ]);
-            if (st) {
-              lastKnownRecording = !!st.recording;
-              lastKnownPaused = !!st.paused;
-              if (st.sessionId) activeRecordingSessionId = st.sessionId;
-              if (st.startedAt) activeRecordingStartTime = st.startedAt;
-              if (st.realStartTime) activeRecordingRealStartTime = st.realStartTime;
-              if (Array.isArray(st.attendance)) currentAttendance = st.attendance;
-              if (lastKnownRecording && activeRecordingTabId === null) {
-                try {
-                  const stored: any = await new Promise((resolve) => {
-                    (chrome.storage as any)?.session?.get?.(
-                      ['tabId', 'meetingId', 'waitingForRejoin', 'autoPausedForRejoin'],
-                      (r: any) => resolve(r || {})
-                    );
-                  });
-                  if (stored?.tabId) activeRecordingTabId = stored.tabId;
-                  if (stored?.meetingId) activeRecordingMeetingId = stored.meetingId;
-                  if (typeof stored?.waitingForRejoin === 'boolean') isWaitingForRejoin = stored.waitingForRejoin;
-                  if (typeof stored?.autoPausedForRejoin === 'boolean') autoPausedForRejoin = stored.autoPausedForRejoin;
-                } catch {}
-              }
-            }
-          } catch (e) {
-            bglog('GET_RECORDING_STATUS slow path failed:', e);
           }
         }
       } catch (e) {
         bglog('Error in GET_RECORDING_STATUS offscreen query:', e);
-      }
-
-      // Fallback: if we still don't know, check chrome.storage.session
-      if (!lastKnownRecording) {
-        try {
-          const stored: any = await new Promise((resolve) => {
-            (chrome.storage as any)?.session?.get?.(
-              ['recording', 'paused', 'sessionId', 'startedAt', 'realStartTime', 'tabId', 'meetingId', 'waitingForRejoin', 'autoPausedForRejoin'],
-              (r: any) => resolve(r || {})
-            );
-          });
-          if (stored?.recording) {
-            lastKnownRecording = true;
-            lastKnownPaused = !!stored.paused;
-            if (stored.sessionId) activeRecordingSessionId = stored.sessionId;
-            if (stored.startedAt) activeRecordingStartTime = stored.startedAt;
-            if (stored.realStartTime) activeRecordingRealStartTime = stored.realStartTime;
-            if (stored.tabId) activeRecordingTabId = stored.tabId;
-            if (stored.meetingId) activeRecordingMeetingId = stored.meetingId;
-            if (typeof stored.waitingForRejoin === 'boolean') isWaitingForRejoin = stored.waitingForRejoin;
-            if (typeof stored.autoPausedForRejoin === 'boolean') autoPausedForRejoin = stored.autoPausedForRejoin;
-            bglog('Recovered recording state from chrome.storage.session');
-          }
-        } catch {}
       }
 
       sendResponse({
@@ -1186,7 +1044,8 @@ async function handleStartRecording(msg: any, sender: chrome.runtime.MessageSend
         if (typeof muteCheck.isMuted === 'boolean') initialMuted = muteCheck.isMuted;
       } catch {}
 
-      const r = await postToOffscreen({ type: 'OFFSCREEN_START', streamId, source, meetingId, initialMuted });
+      const settings = await getSettings();
+      const r = await postToOffscreen({ type: 'OFFSCREEN_START', streamId, source, meetingId, initialMuted, settings });
       if (r?.ok) {
         activeRecordingTabId = targetTabId;
         activeRecordingSessionId = r.sessionId;
