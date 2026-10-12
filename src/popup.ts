@@ -59,7 +59,7 @@ function formatDuration(ms: number): string {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
-function setUI(recording: boolean, startedAt?: number, paused = false, realStart?: number) {
+function setUI(recording: boolean, startedAt?: number, paused = false, realStart?: number, waitingForRejoin = false) {
   if (!startBtn || !stopBtn) return;
   startBtn.disabled = recording;
   stopBtn.disabled = !recording;
@@ -74,10 +74,12 @@ function setUI(recording: boolean, startedAt?: number, paused = false, realStart
 
     if (statusPill) {
       statusPill.classList.add('recording');
-      if (paused) statusPill.style.opacity = '0.7';
+      if (paused || waitingForRejoin) statusPill.style.opacity = '0.7';
       else statusPill.style.opacity = '1';
     }
-    if (statusText) statusText.textContent = paused ? 'PAUSED' : 'REC LIVE';
+    if (statusText) {
+      statusText.textContent = waitingForRejoin ? 'WAITING REJOIN' : paused ? 'PAUSED' : 'REC LIVE';
+    }
     if (timerCard) timerCard.classList.add('active');
 
     const effectiveStart = startedAt && startedAt > 0 ? startedAt : Date.now();
@@ -368,7 +370,7 @@ discardBtn?.addEventListener('click', async () => {
 void (async () => {
   try {
     const st = await chrome.runtime.sendMessage({ type: 'GET_RECORDING_STATUS' });
-    setUI(!!st?.recording, st?.startedAt, !!st?.paused, st?.realStartTime);
+    setUI(!!st?.recording, st?.startedAt, !!st?.paused, st?.realStartTime, !!st?.waitingForRejoin);
   } catch {
     setUI(false);
   }
@@ -379,7 +381,9 @@ void (async () => {
 
 // Listen for background state broadcasts
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg?.type === 'RECORDING_STATE') setUI(!!msg.recording, msg.startedAt, !!msg.paused, msg.realStartTime);
+  if (msg?.type === 'RECORDING_STATE') {
+    setUI(!!msg.recording, msg.startedAt, !!msg.paused, msg.realStartTime, !!msg.waitingForRejoin);
+  }
   if (msg?.type === 'RECORDING_SAVED') {
     toast(`Video saved: ${msg.filename || 'recording.webm'}`);
     setUI(false);

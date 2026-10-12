@@ -611,8 +611,7 @@ async function prepareAndRecord(streamId: string, source: 'tab' | 'desktop' = 't
 
         await recorderDB.updateSessionStatus(finishedSessionId, 'COMPLETED', Date.now());
 
-        // Transmit save instructions to background
-        getPort().postMessage({
+        const savePayload = {
           type: 'OFFSCREEN_SAVE',
           sessionId: finishedSessionId,
           videoBlobUrl,
@@ -629,7 +628,15 @@ async function prepareAndRecord(streamId: string, source: 'tab' | 'desktop' = 't
           attendanceDataUrl,
           attendanceFilename,
           attendanceContent: attendanceCsv,
-        });
+        };
+
+        // Transmit save instructions to background via both runtime.sendMessage (reliably wakes suspended MV3 SW) and port
+        try {
+          chrome.runtime.sendMessage(savePayload).catch(() => {});
+        } catch {}
+        try {
+          portRef?.postMessage(savePayload);
+        } catch {}
 
         log('OFFSCREEN_SAVE dispatched for video, text transcript, subtitles, and attendance sheet');
       } catch (err) {
@@ -673,7 +680,9 @@ async function prepareAndRecord(streamId: string, source: 'tab' | 'desktop' = 't
     if (mediaRecorder && capturing) {
       try {
         if (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused') {
-          try { mediaRecorder.requestData(); } catch {}
+          if (mediaRecorder.state === 'recording') {
+            try { mediaRecorder.requestData(); } catch {}
+          }
           mediaRecorder.stop();
         }
       } catch {}
@@ -751,9 +760,41 @@ function cleanupStreams(keepTabAudio: boolean = false) {
 
 let pendingAttendance: AttendeeRecord[] = [];
 
+function mergeAttendance(existing: AttendeeRecord[], incoming: AttendeeRecord[]): AttendeeRecord[] {
+  const map = new Map<string, AttendeeRecord>();
+  for (const a of existing) {
+    if (a && a.id) map.set(a.id, { ...a });
+  }
+  for (const inc of incoming) {
+    if (!inc || !inc.id) continue;
+    const prev = map.get(inc.id);
+    if (prev) {
+      const firstSeen = Math.min(prev.firstSeen || inc.firstSeen, inc.firstSeen || prev.firstSeen);
+      const lastSeen = Math.max(prev.lastSeen || inc.lastSeen, inc.lastSeen || prev.lastSeen);
+      const spokeCount = Math.max(prev.spokeCount || 0, inc.spokeCount || 0);
+      const lastSpokeAt = Math.max(prev.lastSpokeAt || 0, inc.lastSpokeAt || 0) || null;
+      const durationMs = Math.max(prev.durationMs || 0, inc.durationMs || 0, lastSeen - firstSeen);
+      const name = inc.name && inc.name.length >= (prev.name?.length || 0) ? inc.name : prev.name;
+      map.set(inc.id, {
+        id: inc.id,
+        name,
+        firstSeen,
+        lastSeen,
+        durationMs,
+        spokeCount,
+        lastSpokeAt,
+        isHost: !!(prev.isHost || inc.isHost),
+      });
+    } else {
+      map.set(inc.id, { ...inc });
+    }
+  }
+  return Array.from(map.values());
+}
+
 function stopRecording(attendance?: AttendeeRecord[]) {
-  if (Array.isArray(attendance)) {
-    pendingAttendance = attendance;
+  if (Array.isArray(attendance) && attendance.length > 0) {
+    pendingAttendance = mergeAttendance(pendingAttendance, attendance);
   }
   if (!mediaRecorder) {
     log('Stop called but no mediaRecorder instance exists');
@@ -761,7 +802,9 @@ function stopRecording(attendance?: AttendeeRecord[]) {
   }
   try {
     if (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused') {
-      try { mediaRecorder.requestData(); } catch {}
+      if (mediaRecorder.state === 'recording') {
+        try { mediaRecorder.requestData(); } catch {}
+      }
       mediaRecorder.stop();
       log('mediaRecorder.stop() successfully executed');
     } else {
@@ -788,6 +831,7 @@ function attachRpcListener(port: chrome.runtime.Port): void {
           if (capturing) {
             return respond(msg, { ok: false, error: 'Already recording' });
           }
+          pendingAttendance = [];
           isMeetMuted = initialMuted;
           log(`OFFSCREEN_START initialized with isMeetMuted=${isMeetMuted}`);
           await prepareAndRecord(streamId, source, meetingId);
@@ -808,7 +852,12 @@ function attachRpcListener(port: chrome.runtime.Port): void {
 
       if (msg?.type === 'OFFSCREEN_PAUSE') {
         try {
-          if (!mediaRecorder || mediaRecorder.state !== 'recording') throw new Error('Not recording');
+          if (!mediaRecorder) throw new Error('Not recording');
+          if (mediaRecorder.state === 'paused') {
+            return respond(msg, { ok: true });
+          }
+          if (mediaRecorder.state !== 'recording') throw new Error('Not recording');
+          try { mediaRecorder.requestData(); } catch {}
           mediaRecorder.pause();
           isPaused = true;
           lastPauseTime = Date.now();
@@ -822,7 +871,14 @@ function attachRpcListener(port: chrome.runtime.Port): void {
 
       if (msg?.type === 'OFFSCREEN_RESUME') {
         try {
-          if (!mediaRecorder || mediaRecorder.state !== 'paused') throw new Error('Not paused');
+          if (!mediaRecorder) throw new Error('Not recording');
+          if (audioContext && audioContext.state === 'suspended') {
+            audioContext.resume().catch(() => {});
+          }
+          if (mediaRecorder.state === 'recording') {
+            return respond(msg, { ok: true });
+          }
+          if (mediaRecorder.state !== 'paused') throw new Error('Not paused');
           mediaRecorder.resume();
           if (lastPauseTime > 0) {
             totalPausedTime += Date.now() - lastPauseTime;
@@ -844,7 +900,18 @@ function attachRpcListener(port: chrome.runtime.Port): void {
           sessionId: activeSessionId,
           startedAt: getEffectiveStartTime(),
           realStartTime: sessionStartTime,
+          attendance: pendingAttendance,
         });
+      }
+
+      if (msg?.type === 'OFFSCREEN_SYNC_ATTENDANCE') {
+        if (Array.isArray(msg.attendance) && msg.attendance.length > 0) {
+          pendingAttendance = mergeAttendance(pendingAttendance, msg.attendance);
+          if (activeSessionId) {
+            recorderDB.saveAttendance(activeSessionId, pendingAttendance).catch(() => {});
+          }
+        }
+        return;
       }
 
       // FR-AV-3: Google Meet Mute Sync
@@ -940,10 +1007,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       sendResponse({ ok: true });
       return false;
     }
+    if (msg?.type === 'REVOKE_BLOB_URL') {
+      if (typeof msg.videoBlobUrl === 'string') {
+        try { URL.revokeObjectURL(msg.videoBlobUrl); } catch {}
+      }
+      if (typeof msg.txtBlobUrl === 'string') {
+        try { URL.revokeObjectURL(msg.txtBlobUrl); } catch {}
+      }
+      if (typeof msg.vttBlobUrl === 'string') {
+        try { URL.revokeObjectURL(msg.vttBlobUrl); } catch {}
+      }
+      if (typeof msg.attendanceBlobUrl === 'string') {
+        try { URL.revokeObjectURL(msg.attendanceBlobUrl); } catch {}
+      }
+      if (typeof msg.sessionId === 'string') {
+        log(`Storage cleanup for session ${msg.sessionId}`);
+        recorderDB.deleteSession(msg.sessionId).catch((err) => log('Cleanup error:', err));
+      }
+      sendResponse({ ok: true });
+      return false;
+    }
   } catch (e) {
     sendResponse({ ok: false, error: String(e) });
     return false;
   }
   return false;
 });
+
 

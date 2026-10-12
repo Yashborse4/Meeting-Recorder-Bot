@@ -187,9 +187,13 @@ function createFloatingBadge() {
 
 // --- 2. Google Meet Recording State & WakeLock Management ---
 let isPaused = false;
-function updateRecordingUI(recording: boolean, paused: boolean = false) {
+let isWaitingForRejoin = false;
+let hasJoinedCallInThisPageLoad = false;
+
+function updateRecordingUI(recording: boolean, paused: boolean = false, waitingForRejoin: boolean = false) {
   isRecording = recording;
   isPaused = paused;
+  isWaitingForRejoin = waitingForRejoin;
 
   if (recording && !paused) {
     requestScreenWakeLock().catch(() => {});
@@ -199,16 +203,19 @@ function updateRecordingUI(recording: boolean, paused: boolean = false) {
 
   if (floatingBadge) {
     floatingBadge.style.display = recording ? 'flex' : 'none';
-    if (paused) {
-      floatingBadge.style.opacity = '0.7';
+    if (paused || waitingForRejoin) {
+      floatingBadge.style.opacity = '0.85';
       if (floatingLabelEl) {
-        floatingLabelEl.textContent = 'PAUSED';
+        floatingLabelEl.textContent = waitingForRejoin ? 'REJOIN' : 'PAUSED';
         floatingLabelEl.style.color = '#f59e0b';
       }
       if (floatingDotEl) {
         floatingDotEl.style.backgroundColor = '#f59e0b';
         floatingDotEl.style.boxShadow = 'none';
         floatingDotEl.style.animation = 'none';
+      }
+      if (waitingForRejoin) {
+        floatingBadge.title = 'Recording paused — Rejoin meeting to continue, or click to stop & save now';
       }
     } else {
       floatingBadge.style.opacity = '1';
@@ -247,6 +254,7 @@ function updateRecordingUI(recording: boolean, paused: boolean = false) {
       timerInterval = null;
     }
     recordingStartTime = 0;
+    isWaitingForRejoin = false;
   }
 }
 
@@ -699,35 +707,175 @@ function launchCaptionRegionObserver(region: HTMLElement) {
   region.querySelectorAll<HTMLElement>('.nMcdL').forEach(scanCaptionNode);
 }
 
-// --- 5. Auto-Stop on Disconnect / Call Exit ---
-function checkForMeetingExit() {
-  if (!isRecording) return;
+// --- 5. Smart Rejoin Detection & Auto-Stop on Permanent Exit ---
+function getMeetingIdFromUrl(): string {
+  try {
+    const path = window.location.pathname.replace(/^\/+|\/+$/g, '');
+    if (!path || path === 'landing' || path === 'new' || path.startsWith('_meet')) {
+      return 'google-meet';
+    }
+    const parts = path.split('/');
+    return parts[parts.length - 1] || 'google-meet';
+  } catch {
+    return 'google-meet';
+  }
+}
 
-  const textContent = document.body.innerText || '';
-  const exitPhrases = [
-    'You left the meeting',
-    'Return to home screen',
-    'You have been removed from the meeting',
-    'You’ve been removed from the meeting',
-    'The meeting has ended for everyone',
-  ];
-
-  for (const phrase of exitPhrases) {
-    if (textContent.includes(phrase)) {
-      console.log(`[MeetContentScript] Detected exit phrase: "${phrase}". Auto-finalizing recording...`);
-      flushPendingCaptions();
-      chrome.runtime.sendMessage({ type: 'FINALIZE_RECORDING' }).catch(() => {});
-      updateRecordingUI(false);
-      break;
+function restoreAttendanceRecords(records?: AttendeeRecord[]) {
+  if (!Array.isArray(records)) return;
+  for (const r of records) {
+    if (!r || !r.id) continue;
+    const existing = attendanceMap.get(r.id);
+    if (existing) {
+      existing.firstSeen = Math.min(existing.firstSeen || r.firstSeen, r.firstSeen || existing.firstSeen);
+      existing.lastSeen = Math.max(existing.lastSeen || r.lastSeen, r.lastSeen || existing.lastSeen);
+      existing.durationMs = Math.max(existing.durationMs || 0, r.durationMs || 0, existing.lastSeen - existing.firstSeen);
+      existing.spokeCount = Math.max(existing.spokeCount || 0, r.spokeCount || 0);
+      existing.lastSpokeAt = Math.max(existing.lastSpokeAt || 0, r.lastSpokeAt || 0) || null;
+      if (r.isHost) existing.isHost = true;
+    } else {
+      attendanceMap.set(r.id, { ...r });
     }
   }
 }
 
-// Tab navigation / unload listener
+function hasLeaveCallButton(): boolean {
+  const buttons = document.querySelectorAll<HTMLElement>('button, [role="button"]');
+  for (const btn of buttons) {
+    const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+    const tooltip = (btn.getAttribute('data-tooltip') || '').toLowerCase();
+    const label = `${aria} ${tooltip}`;
+    if (
+      label.includes('leave call') ||
+      label.includes('salir de la llamada') ||
+      label.includes("quitter l'appel") ||
+      label.includes('quitter la réunion') ||
+      label.includes('anruf verlassen') ||
+      label.includes('sair da chamada') ||
+      label.includes('abbandona la chiamata')
+    ) {
+      return true;
+    }
+    const icons = btn.querySelectorAll('i, span');
+    for (const icon of icons) {
+      if (icon.childElementCount === 0 && icon.textContent?.trim() === 'call_end') {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function attachReturnHomeButtonListener(): void {
+  const buttons = document.querySelectorAll<HTMLElement>('button, a, [role="button"]');
+  for (const btn of buttons) {
+    if (btn.dataset.gmeetRecHomeBound === 'true') continue;
+    const text = (btn.textContent || '').trim().toLowerCase();
+    const aria = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
+    if (
+      text.includes('return to home screen') ||
+      aria.includes('return to home screen') ||
+      text.includes('volver a la pantalla de inicio') ||
+      text.includes("revenir à l'écran d'accueil") ||
+      text.includes('zurück zum startbildschirm') ||
+      text.includes('voltar à tela inicial')
+    ) {
+      btn.dataset.gmeetRecHomeBound = 'true';
+      btn.addEventListener('click', () => {
+        if (isRecording) {
+          console.log('[MeetContentScript] User clicked "Return to home screen". Finalizing recording...');
+          flushPendingCaptions();
+          chrome.runtime.sendMessage({ type: 'FINALIZE_RECORDING' }).catch(() => {});
+          updateRecordingUI(false);
+        }
+      });
+    }
+  }
+}
+
+function checkForMeetingExit() {
+  const inActiveCall = hasLeaveCallButton();
+
+  if (inActiveCall) {
+    const wasNotJoinedYet = !hasJoinedCallInThisPageLoad;
+    hasJoinedCallInThisPageLoad = true;
+
+    // If we were waiting to rejoin (after page refresh or temporary leave) and are now back inside the call:
+    if (isRecording && (isWaitingForRejoin || wasNotJoinedYet)) {
+      isWaitingForRejoin = false;
+      console.log('[MeetContentScript] Active call detected after refresh/rejoin! Continuing recording...');
+      chrome.runtime.sendMessage({
+        type: 'MEETING_REJOINED',
+        meetingId: getMeetingIdFromUrl(),
+      }).catch(() => {});
+      setTimeout(() => checkMeetMuteState(true), 150);
+      setTimeout(() => scanParticipants(), 250);
+    }
+    return;
+  }
+
+  if (!isRecording) return;
+
+  const textContent = document.body.innerText || '';
+
+  // 1. Permanent / non-rejoinable exit phrases -> immediately finalize and save recording
+  const permanentExitPhrases = [
+    'You have been removed from the meeting',
+    'You’ve been removed from the meeting',
+    'The meeting has ended for everyone',
+    'Your host ended the meeting',
+    'No one responded to your request to join',
+    'Your request to join was denied',
+  ];
+
+  for (const phrase of permanentExitPhrases) {
+    if (textContent.includes(phrase)) {
+      console.log(`[MeetContentScript] Detected permanent exit phrase: "${phrase}". Auto-finalizing recording...`);
+      flushPendingCaptions();
+      chrome.runtime.sendMessage({ type: 'FINALIZE_RECORDING' }).catch(() => {});
+      updateRecordingUI(false);
+      return;
+    }
+  }
+
+  // 2. Recoverable leave screen ("You left the meeting" with "Rejoin" option) -> pause and wait for rejoin
+  const leftPhrases = [
+    'You left the meeting',
+    'Has salido de la reunión',
+    'Vous avez quitté la réunion',
+    'Sie haben die Besprechung verlassen',
+    'Você saiu da reunião',
+  ];
+
+  const isOnLeftScreen =
+    leftPhrases.some((p) => textContent.includes(p)) ||
+    (hasJoinedCallInThisPageLoad && !inActiveCall && textContent.includes('Return to home screen'));
+
+  if (isOnLeftScreen) {
+    attachReturnHomeButtonListener();
+    if (!isWaitingForRejoin) {
+      isWaitingForRejoin = true;
+      console.log('[MeetContentScript] User left the meeting (Rejoin available). Pausing and waiting for rejoin...');
+      flushPendingCaptions();
+      chrome.runtime.sendMessage({
+        type: 'MEETING_LEFT_WAITING_REJOIN',
+        meetingId: getMeetingIdFromUrl(),
+        attendance: Array.from(attendanceMap.values()),
+      }).catch(() => {});
+    }
+  }
+}
+
+// Tab refresh / unload listener:
+// Do NOT immediately finalize on beforeunload so page refreshes can seamlessly continue recording when rejoined!
 window.addEventListener('beforeunload', () => {
   if (isRecording) {
     flushPendingCaptions();
-    chrome.runtime.sendMessage({ type: 'FINALIZE_RECORDING' }).catch(() => {});
+    chrome.runtime.sendMessage({
+      type: 'PAGE_UNLOADING',
+      meetingId: getMeetingIdFromUrl(),
+      attendance: Array.from(attendanceMap.values()),
+    }).catch(() => {});
   }
 });
 
@@ -787,7 +935,7 @@ const rootObserver = new MutationObserver((mutations) => {
     launchCaptionRegionObserver(captionRegion);
   }
 
-  // 3. Auto-stop on disconnect (throttled 300ms)
+  // 3. Monitor call rejoin & exit state (throttled 300ms)
   if (!_throttleExit) {
     _throttleExit = window.setTimeout(() => {
       _throttleExit = null;
@@ -891,6 +1039,10 @@ function checkAndPromptMicPermission() {
 function init() {
   createFloatingBadge();
 
+  if (hasLeaveCallButton()) {
+    hasJoinedCallInThisPageLoad = true;
+  }
+
   rootObserver.observe(document.body, { childList: true, subtree: true });
 
   // Immediately detect mute state so we don't assume unmuted if user joins already muted
@@ -899,24 +1051,30 @@ function init() {
   // Prompt for microphone permission if user opened a Meet call and hasn't granted yet
   checkAndPromptMicPermission();
 
-  // Query background for active recording state
+  // Query background for active recording state (including across page refreshes)
   try {
     chrome.runtime.sendMessage({ type: 'GET_RECORDING_STATUS' }, (res) => {
       if (chrome.runtime.lastError) {
         // Prevent "Unchecked runtime.lastError" in console
         return;
       }
+      if (res?.attendance) {
+        restoreAttendanceRecords(res.attendance);
+      }
       if (res?.recording) {
         if (res.startedAt) recordingStartTime = res.startedAt;
-        updateRecordingUI(true, !!res.paused);
+        updateRecordingUI(true, !!res.paused, !!res.waitingForRejoin);
+        // Check if we already rejoined the active call on this page load
+        checkForMeetingExit();
       }
     });
   } catch {}
 
-  // User action listeners to immediately detect mute toggles (click or Ctrl+D)
+  // User action listeners to immediately detect mute toggles and call join/rejoin clicks
   document.addEventListener('click', () => {
     setTimeout(() => checkMeetMuteState(), 80);
     setTimeout(() => scanParticipants(), 150);
+    setTimeout(() => checkForMeetingExit(), 250);
   });
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
@@ -924,10 +1082,20 @@ function init() {
     }
   });
 
-  // Initial and periodic scan for participant attendance
+  // Initial and periodic scan for participant attendance and rejoin state
   scanParticipants();
+  let syncTick = 0;
   setInterval(() => {
     scanParticipants();
+    checkForMeetingExit();
+    syncTick++;
+    // Periodically sync attendance to offscreen/IndexedDB every ~10 seconds during recording
+    if (isRecording && attendanceMap.size > 0 && syncTick % 4 === 0) {
+      chrome.runtime.sendMessage({
+        type: 'SYNC_ATTENDANCE',
+        attendance: Array.from(attendanceMap.values()),
+      }).catch(() => {});
+    }
   }, 2500);
 
   console.log('[MeetContentScript] Content script initialized.');
@@ -943,11 +1111,15 @@ if (document.readyState === 'loading') {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'RECORDING_STATE') {
     if (msg.startedAt) recordingStartTime = msg.startedAt;
-    updateRecordingUI(!!msg.recording, !!msg.paused);
+    updateRecordingUI(!!msg.recording, !!msg.paused, !!msg.waitingForRejoin);
     if (msg.recording) {
+      if (hasLeaveCallButton()) {
+        hasJoinedCallInThisPageLoad = true;
+      }
       // Force sync mute state to background and offscreen on recording start
       setTimeout(() => checkMeetMuteState(true), 100);
       scanParticipants();
+      checkForMeetingExit();
     }
     sendResponse({ ok: true });
     return false;
@@ -981,11 +1153,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg?.type === 'GET_ATTENDANCE' || msg?.type === 'FLUSH_ATTENDANCE') {
     scanParticipants();
-    let meetingId = 'google-meet';
-    try {
-      const pathParts = window.location.pathname.split('/');
-      meetingId = pathParts[pathParts.length - 1] || 'google-meet';
-    } catch {}
+    const meetingId = getMeetingIdFromUrl();
     sendResponse({
       ok: true,
       attendance: Array.from(attendanceMap.values()),
