@@ -76,27 +76,7 @@ function respond(req: any, payload: any) {
 }
 
 function pushState(recording: boolean, extra?: Record<string, any>) {
-  try {
-    (chrome.storage as any)?.session?.set?.({
-      recording,
-      paused: !!extra?.paused,
-      sessionId: extra?.sessionId || null,
-      startedAt: extra?.startedAt || 0,
-      realStartTime: extra?.realStartTime || 0,
-    }).catch?.(() => {});
-  } catch {}
   getPort().postMessage({ type: 'RECORDING_STATE', recording, ...extra });
-}
-
-function inferSuffixFromActiveTabUrl(url?: string | null): string {
-  try {
-    if (!url) return 'google-meet';
-    const u = new URL(url);
-    const last = u.pathname.split('/').pop() || 'google-meet';
-    return last;
-  } catch {
-    return 'google-meet';
-  }
 }
 
 // Active recording state variables
@@ -117,6 +97,23 @@ function getEffectiveStartTime() {
 function getActiveDuration() {
   return Math.max(0, Date.now() - getEffectiveStartTime());
 }
+
+// Keep MV3 Service Worker awake while recording or paused waiting for rejoin
+setInterval(() => {
+  if (capturing) {
+    try {
+      getPort().postMessage({
+        type: 'OFFSCREEN_KEEPALIVE',
+        recording: capturing,
+        paused: isPaused,
+        sessionId: activeSessionId,
+        startedAt: getEffectiveStartTime(),
+        realStartTime: sessionStartTime,
+      });
+    } catch {}
+  }
+}, 20000);
+
 
 let audioContext: AudioContext | null = null;
 let micGainNode: GainNode | null = null;
@@ -586,11 +583,7 @@ async function prepareAndRecord(streamId: string, source: 'tab' | 'desktop' = 't
         const attendanceBlob = new Blob([attendanceCsv], { type: 'text/csv;charset=utf-8' });
 
         // Filenames
-        let suffix = meetingId || 'google-meet';
-        try {
-          const tabs = await chrome.tabs.query({ url: 'https://meet.google.com/*' });
-          if (tabs[0]?.url) suffix = inferSuffixFromActiveTabUrl(tabs[0].url);
-        } catch {}
+        const suffix = (meetingId || 'google-meet').replace(/[/\\?%*:|"<>]/g, '-');
 
         const timestamp = Date.now();
         const ext = mime.includes('mp4') ? 'mp4' : 'webm';

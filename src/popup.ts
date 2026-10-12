@@ -215,9 +215,16 @@ async function initSettings() {
   btnClearCache?.addEventListener('click', async () => {
     if (confirm('Clear all cached session recordings from local storage?')) {
       try {
+        let activeSessionId: string | null = null;
+        try {
+          const st = await chrome.runtime.sendMessage({ type: 'GET_RECORDING_STATUS' });
+          if (st?.recording && st?.sessionId) activeSessionId = st.sessionId;
+        } catch {}
         const orphaned = await recorderDB.getOrphanedSessions();
         for (const s of orphaned) {
-          await recorderDB.deleteSession(s.sessionId);
+          if (s.sessionId !== activeSessionId) {
+            await recorderDB.deleteSession(s.sessionId);
+          }
         }
         if (recoveryCard) recoveryCard.style.display = 'none';
         pendingRecoverySession = null;
@@ -247,9 +254,12 @@ async function syncMicState() {
 // FR-EDGE-2: Orphaned Session & Crash Recovery Check
 let pendingRecoverySession: SessionRecord | null = null;
 
-async function checkOrphanedRecordings() {
+async function checkOrphanedRecordings(activeSessionId?: string | null) {
   try {
-    const orphaned = await recorderDB.getOrphanedSessions();
+    const allRecordingSessions = await recorderDB.getOrphanedSessions();
+    const orphaned = activeSessionId
+      ? allRecordingSessions.filter((s) => s.sessionId !== activeSessionId)
+      : allRecordingSessions;
     if (orphaned.length > 0) {
       pendingRecoverySession = orphaned[0];
       const dateStr = new Date(pendingRecoverySession.startedAt).toLocaleTimeString();
@@ -368,14 +378,18 @@ discardBtn?.addEventListener('click', async () => {
 
 // Init: sync recording state, check mic, settings, and check for crashes
 void (async () => {
+  let activeSessionId: string | null = null;
   try {
     const st = await chrome.runtime.sendMessage({ type: 'GET_RECORDING_STATUS' });
+    if (st?.recording && st?.sessionId) {
+      activeSessionId = st.sessionId;
+    }
     setUI(!!st?.recording, st?.startedAt, !!st?.paused, st?.realStartTime, !!st?.waitingForRejoin);
   } catch {
     setUI(false);
   }
   syncMicState().catch(() => {});
-  checkOrphanedRecordings().catch(() => {});
+  checkOrphanedRecordings(activeSessionId).catch(() => {});
   initSettings().catch(() => {});
 })();
 
@@ -461,7 +475,7 @@ startBtn?.addEventListener('click', async () => {
       const preCheck = await chrome.runtime.sendMessage({ type: 'GET_RECORDING_STATUS' });
       if (preCheck?.recording) {
         // Recording is active — just fix the UI to match reality
-        setUI(true, preCheck.startedAt, !!preCheck.paused, preCheck.realStartTime);
+        setUI(true, preCheck.startedAt, !!preCheck.paused, preCheck.realStartTime, !!preCheck.waitingForRejoin);
         return;
       }
     } catch {}
@@ -503,7 +517,7 @@ startBtn?.addEventListener('click', async () => {
         try {
           const recheck = await chrome.runtime.sendMessage({ type: 'GET_RECORDING_STATUS' });
           if (recheck?.recording) {
-            setUI(true, recheck.startedAt, !!recheck.paused, recheck.realStartTime);
+            setUI(true, recheck.startedAt, !!recheck.paused, recheck.realStartTime, !!recheck.waitingForRejoin);
             return;
           }
         } catch {}
@@ -538,7 +552,7 @@ startBtn?.addEventListener('click', async () => {
     if (!resp) throw new Error('No response from background service worker');
     // If background says already recording, fix UI silently
     if (resp.alreadyRecording) {
-      setUI(true, resp.startedAt, !!resp.paused, resp.realStartTime);
+      setUI(true, resp.startedAt, !!resp.paused, resp.realStartTime, !!resp.waitingForRejoin);
       return;
     }
     if (resp.ok === false) throw new Error(resp.error || 'Failed to start recording');
@@ -645,7 +659,16 @@ btnDownloadAttendance?.addEventListener('click', async () => {
       }
     }
 
-    // 2. If no active tab participants found, check latest saved session from DB
+    // 2. If no active tab participants found (e.g. while refreshing), check active background/offscreen session or latest DB session
+    if (attendanceList.length === 0) {
+      try {
+        const st = await chrome.runtime.sendMessage({ type: 'GET_RECORDING_STATUS' });
+        if (Array.isArray(st?.attendance) && st.attendance.length > 0) {
+          attendanceList = st.attendance;
+          if (st.meetingId) meetingTitle = st.meetingId;
+        }
+      } catch {}
+    }
     if (attendanceList.length === 0) {
       try {
         const sessions = await recorderDB.getOrphanedSessions();

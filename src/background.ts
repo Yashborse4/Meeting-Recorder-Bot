@@ -464,6 +464,15 @@ chrome.runtime.onConnect.addListener((port) => {
       broadcastState(lastKnownRecording, { ...msg, waitingForRejoin: isWaitingForRejoin });
     }
 
+    if (msg?.type === 'OFFSCREEN_KEEPALIVE') {
+      lastKnownRecording = !!msg.recording;
+      if (typeof msg.paused === 'boolean') lastKnownPaused = msg.paused;
+      if (msg.sessionId) activeRecordingSessionId = msg.sessionId;
+      if (msg.startedAt) activeRecordingStartTime = msg.startedAt;
+      if (msg.realStartTime) activeRecordingRealStartTime = msg.realStartTime;
+      return;
+    }
+
     // Multi-file downloads (Video WebM/MP4 + Plain Text .txt transcript + WebVTT subtitles + Excel Attendance .csv)
     if (msg?.type === 'OFFSCREEN_SAVE') {
       handleOffscreenSave(msg);
@@ -520,6 +529,56 @@ function postToOffscreen(msg: any): Promise<any> {
   });
 }
 
+async function hydrateStateIfNeeded(): Promise<void> {
+  if (lastKnownRecording && activeRecordingTabId !== null && offscreenPort) {
+    return;
+  }
+  try {
+    const stored: any = await new Promise((resolve) => {
+      (chrome.storage as any)?.session?.get?.(
+        ['recording', 'paused', 'sessionId', 'startedAt', 'realStartTime', 'tabId', 'meetingId', 'waitingForRejoin', 'autoPausedForRejoin'],
+        (r: any) => resolve(r || {})
+      );
+    });
+    if (stored?.recording) {
+      lastKnownRecording = true;
+      if (typeof stored.paused === 'boolean') lastKnownPaused = stored.paused;
+      if (stored.sessionId) activeRecordingSessionId = stored.sessionId;
+      if (stored.startedAt) activeRecordingStartTime = stored.startedAt;
+      if (stored.realStartTime) activeRecordingRealStartTime = stored.realStartTime;
+      if (typeof stored.tabId === 'number') activeRecordingTabId = stored.tabId;
+      if (stored.meetingId) activeRecordingMeetingId = stored.meetingId;
+      if (typeof stored.waitingForRejoin === 'boolean') isWaitingForRejoin = stored.waitingForRejoin;
+      if (typeof stored.autoPausedForRejoin === 'boolean') autoPausedForRejoin = stored.autoPausedForRejoin;
+    }
+  } catch {}
+
+  if (!offscreenPort) {
+    try {
+      const hasOff = await hasOffscreenContext();
+      if (hasOff) {
+        await Promise.race([
+          ensureOffscreen(),
+          new Promise<void>((_, reject) => setTimeout(() => reject(new Error('ensureOffscreen timeout')), 3000)),
+        ]);
+        if (offscreenPort && !lastKnownRecording) {
+          const st = await Promise.race([
+            postToOffscreen({ type: 'OFFSCREEN_STATUS' }),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+          ]);
+          if (st?.recording) {
+            lastKnownRecording = true;
+            lastKnownPaused = !!st.paused;
+            if (st.sessionId) activeRecordingSessionId = st.sessionId;
+            if (st.startedAt) activeRecordingStartTime = st.startedAt;
+            if (st.realStartTime) activeRecordingRealStartTime = st.realStartTime;
+          }
+        }
+      }
+    } catch {}
+  }
+}
+
 async function getStreamIdForTab(tabId: number, preferDesktop: boolean = false): Promise<{ streamId: string, source: 'tab' | 'desktop' }> {
   // 1. Try direct tabCapture.getMediaStreamId (ONLY valid when initiated via extension gesture like popup or command)
   if (!preferDesktop) {
@@ -563,6 +622,8 @@ chrome.commands?.onCommand.addListener(async (command) => {
     if (!tab?.id || !tab.url?.includes('meet.google.com')) return;
     const tabId = tab.id;
 
+    await hydrateStateIfNeeded();
+
     if (lastKnownRecording) {
       let attendanceData: any[] = [];
       try {
@@ -588,8 +649,7 @@ chrome.commands?.onCommand.addListener(async (command) => {
         const captureInfo = await getStreamIdForTab(tabId);
         let meetingId = 'google-meet';
         if (tab.url) {
-          const pathParts = new URL(tab.url).pathname.split('/');
-          meetingId = pathParts[pathParts.length - 1] || 'google-meet';
+          meetingId = extractMeetingId(tab.url) || 'google-meet';
         }
 
         // Query current Meet mute state beforehand so offscreen starts with zero audio clipping
@@ -640,12 +700,14 @@ chrome.commands?.onCommand.addListener(async (command) => {
 });
 
 async function clearRejoinWaitState(resumeIfAutoPaused = false) {
+  await hydrateStateIfNeeded();
+
   if (rejoinGraceTimer) {
     clearTimeout(rejoinGraceTimer);
     rejoinGraceTimer = null;
   }
   const wasWaiting = isWaitingForRejoin;
-  const shouldResume = resumeIfAutoPaused && autoPausedForRejoin;
+  const shouldResume = resumeIfAutoPaused && (autoPausedForRejoin || isWaitingForRejoin);
   isWaitingForRejoin = false;
   autoPausedForRejoin = false;
 
@@ -672,6 +734,7 @@ async function clearRejoinWaitState(resumeIfAutoPaused = false) {
 }
 
 async function enterRejoinWaitState(reason: string, graceMs = 120000) {
+  await hydrateStateIfNeeded();
   if (!lastKnownRecording) return;
   if (typeof activeRecordingTabId === 'number') {
     if (closingTabIds.has(activeRecordingTabId)) {
@@ -712,6 +775,7 @@ async function enterRejoinWaitState(reason: string, graceMs = 120000) {
   }
   rejoinGraceTimer = setTimeout(async () => {
     rejoinGraceTimer = null;
+    await hydrateStateIfNeeded();
     if (isWaitingForRejoin && lastKnownRecording) {
       const settings = await getSettings();
       if (!settings.autoStopOnExit) {
@@ -892,13 +956,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg?.type === 'PAGE_UNLOADING') {
-    if (offscreenPort && Array.isArray(msg.attendance) && msg.attendance.length > 0) {
-      try {
-        offscreenPort.postMessage({ type: 'OFFSCREEN_SYNC_ATTENDANCE', attendance: msg.attendance });
-      } catch {}
-    }
-    const unloadingTabId = sender.tab?.id ?? activeRecordingTabId;
     void (async () => {
+      await hydrateStateIfNeeded();
+      if (offscreenPort && Array.isArray(msg.attendance) && msg.attendance.length > 0) {
+        try {
+          offscreenPort.postMessage({ type: 'OFFSCREEN_SYNC_ATTENDANCE', attendance: msg.attendance });
+        } catch {}
+      }
+      const unloadingTabId = sender.tab?.id ?? activeRecordingTabId;
       // Wait briefly to distinguish a page refresh from a tab close (beforeunload fires on both)
       await wait(120);
       if (typeof unloadingTabId === 'number') {
@@ -933,31 +998,36 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg?.type === 'MEETING_LEFT_WAITING_REJOIN') {
-    if (offscreenPort && Array.isArray(msg.attendance) && msg.attendance.length > 0) {
-      try {
-        offscreenPort.postMessage({ type: 'OFFSCREEN_SYNC_ATTENDANCE', attendance: msg.attendance });
-      } catch {}
-    }
-    if (lastKnownRecording && (!sender.tab?.id || sender.tab.id === activeRecordingTabId)) {
-      if (msg.meetingId && typeof msg.meetingId === 'string') {
-        activeRecordingMeetingId = msg.meetingId;
+    void (async () => {
+      await hydrateStateIfNeeded();
+      if (offscreenPort && Array.isArray(msg.attendance) && msg.attendance.length > 0) {
+        try {
+          offscreenPort.postMessage({ type: 'OFFSCREEN_SYNC_ATTENDANCE', attendance: msg.attendance });
+        } catch {}
       }
-      void enterRejoinWaitState('left_meeting_screen', 90000);
-    }
+      if (lastKnownRecording && (!sender.tab?.id || sender.tab.id === activeRecordingTabId)) {
+        if (msg.meetingId && typeof msg.meetingId === 'string') {
+          activeRecordingMeetingId = msg.meetingId;
+        }
+        await enterRejoinWaitState('left_meeting_screen', 90000);
+      }
+    })();
     sendResponse({ ok: true });
     return false;
   }
 
   if (msg?.type === 'MEETING_REJOINED') {
-    if (lastKnownRecording && (!sender.tab?.id || sender.tab.id === activeRecordingTabId)) {
-      if (msg.meetingId && typeof msg.meetingId === 'string') {
-        activeRecordingMeetingId = msg.meetingId;
+    void (async () => {
+      await hydrateStateIfNeeded();
+      if (lastKnownRecording && (!sender.tab?.id || sender.tab.id === activeRecordingTabId)) {
+        if (msg.meetingId && typeof msg.meetingId === 'string') {
+          activeRecordingMeetingId = msg.meetingId;
+        }
+        await clearRejoinWaitState(true);
       }
-      void clearRejoinWaitState(true).then(() => sendResponse({ ok: true }));
-      return true;
-    }
-    sendResponse({ ok: true });
-    return false;
+      sendResponse({ ok: true });
+    })();
+    return true;
   }
 
   if (msg?.type === 'CHECK_MIC_PERMISSION') {
@@ -1010,28 +1080,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg?.type === 'PAUSE_RECORDING') {
-    autoPausedForRejoin = false;
-    if (offscreenPort && lastKnownRecording) {
-      postToOffscreen({ type: 'OFFSCREEN_PAUSE' }).then(
-        () => sendResponse({ ok: true }),
-        (err) => sendResponse({ ok: false, error: String(err) })
-      );
-    } else {
-      sendResponse({ ok: false, error: 'Not recording' });
-    }
+    void (async () => {
+      await hydrateStateIfNeeded();
+      autoPausedForRejoin = false;
+      if (offscreenPort && lastKnownRecording) {
+        try {
+          await postToOffscreen({ type: 'OFFSCREEN_PAUSE' });
+          sendResponse({ ok: true });
+        } catch (err) {
+          sendResponse({ ok: false, error: String(err) });
+        }
+      } else {
+        sendResponse({ ok: false, error: 'Not recording' });
+      }
+    })();
     return true;
   }
 
   if (msg?.type === 'RESUME_RECORDING') {
-    void clearRejoinWaitState(false);
-    if (offscreenPort && lastKnownRecording) {
-      postToOffscreen({ type: 'OFFSCREEN_RESUME' }).then(
-        () => sendResponse({ ok: true }),
-        (err) => sendResponse({ ok: false, error: String(err) })
-      );
-    } else {
-      sendResponse({ ok: false, error: 'Not recording' });
-    }
+    void (async () => {
+      await hydrateStateIfNeeded();
+      await clearRejoinWaitState(false);
+      if (offscreenPort && lastKnownRecording) {
+        try {
+          await postToOffscreen({ type: 'OFFSCREEN_RESUME' });
+          sendResponse({ ok: true });
+        } catch (err) {
+          sendResponse({ ok: false, error: String(err) });
+        }
+      } else {
+        sendResponse({ ok: false, error: 'Not recording' });
+      }
+    })();
     return true;
   }
 
@@ -1046,6 +1126,8 @@ async function handleStartRecording(msg: any, sender: chrome.runtime.MessageSend
       sendResponse({ ok: false, error: 'Target tabId not provided' });
       return;
     }
+
+    await hydrateStateIfNeeded();
 
     // Guard: If we already have an active recording, reject immediately and report actual state
     if (lastKnownRecording || activeRecordingTabId !== null) {
@@ -1153,6 +1235,8 @@ async function handleStartRecording(msg: any, sender: chrome.runtime.MessageSend
 async function handleStopRecording(msg: any, sendResponse: (res: any) => void) {
   try {
     bglog('STOP_RECORDING / FINALIZE requested:', msg.type);
+    await hydrateStateIfNeeded();
+
     if (msg.type === 'FINALIZE_RECORDING') {
       const settings = await getSettings();
       if (!settings.autoStopOnExit) {
@@ -1184,9 +1268,14 @@ async function handleStopRecording(msg: any, sendResponse: (res: any) => void) {
       } catch {}
       await wait(100);
     }
-    if (offscreenPort && lastKnownRecording) {
-      const r = await postToOffscreen({ type: 'OFFSCREEN_STOP', attendance: attendanceData });
-      bglog('OFFSCREEN_STOP response', r);
+    if (lastKnownRecording) {
+      if (!offscreenPort) {
+        try { await ensureOffscreen(); } catch {}
+      }
+      if (offscreenPort) {
+        const r = await postToOffscreen({ type: 'OFFSCREEN_STOP', attendance: attendanceData });
+        bglog('OFFSCREEN_STOP response', r);
+      }
     }
     sendResponse({ ok: true });
   } catch (e: any) {
