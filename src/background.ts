@@ -974,6 +974,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg?.type === 'CLEANUP_ORPHANED_STREAM') {
+    void (async () => {
+      try {
+        if (offscreenPort) {
+          await postToOffscreen({ type: 'OFFSCREEN_CLEANUP_STREAMS' });
+        }
+      } catch {}
+      sendResponse({ ok: true });
+    })();
+    return true;
+  }
+
   // 3. Fallthrough: not handled by background, return false immediately so port is not held open
   return false;
 });
@@ -1144,13 +1156,34 @@ async function handleStopRecording(msg: any, sendResponse: (res: any) => void) {
 }
 
 // Helper to check memory state or fallback to session storage / offscreen for critical tab events
-async function checkRecordingTabMatch(tabId: number): Promise<{ isMatch: boolean, isRecording: boolean }> {
+async function checkRecordingTabMatch(tabId: number, currentUrl?: string): Promise<{ isMatch: boolean, isRecording: boolean }> {
   if (!lastKnownRecording || activeRecordingTabId === null) {
     await hydrateStateIfNeeded();
   }
   const isRecording = lastKnownRecording || (await hasOffscreenContext());
-  const isMatch = activeRecordingTabId === null ? isRecording : tabId === activeRecordingTabId;
-  return { isMatch, isRecording };
+  if (!isRecording) {
+    return { isMatch: false, isRecording: false };
+  }
+  if (typeof activeRecordingTabId === 'number') {
+    return { isMatch: tabId === activeRecordingTabId, isRecording: true };
+  }
+  // If activeRecordingTabId was lost, check if current tab URL matches the meeting
+  if (currentUrl) {
+    const meetId = extractMeetingId(currentUrl);
+    if (meetId && (!activeRecordingMeetingId || activeRecordingMeetingId === 'google-meet' || meetId === activeRecordingMeetingId)) {
+      activeRecordingTabId = tabId;
+      return { isMatch: true, isRecording: true };
+    }
+    return { isMatch: false, isRecording: true };
+  }
+  // For tab close (onRemoved) where URL cannot be queried: only match if no Google Meet tabs remain
+  try {
+    const meetTabs = await chrome.tabs.query({ url: 'https://meet.google.com/*' });
+    if (meetTabs.length === 0) {
+      return { isMatch: true, isRecording: true };
+    }
+  } catch {}
+  return { isMatch: false, isRecording: true };
 }
 
 // Auto-finalize recording if user closes the active recorded Meet tab
@@ -1173,7 +1206,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 
 // Auto-finalize recording if recorded tab navigates away from the meeting, or pause & wait if refreshing same meeting
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  const match = await checkRecordingTabMatch(tabId);
+  const match = await checkRecordingTabMatch(tabId, changeInfo.url || tab?.url);
   if (!match.isMatch || !match.isRecording) return;
 
   if (changeInfo.url) {

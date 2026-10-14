@@ -798,12 +798,38 @@ function checkForMeetingExit() {
 
   // 1. Permanent / non-rejoinable exit phrases -> immediately finalize and save recording
   const permanentExitPhrases = [
+    // English
     'You have been removed from the meeting',
     'You’ve been removed from the meeting',
     'The meeting has ended for everyone',
     'Your host ended the meeting',
     'No one responded to your request to join',
     'Your request to join was denied',
+    // Spanish
+    'Se ha terminado la reunión para todos',
+    'El organizador ha finalizado la reunión',
+    'Te han quitado de la reunión',
+    'Se te ha expulsado de la reunión',
+    'Nadie ha respondido a tu solicitud para unirte',
+    // French
+    'La réunion est terminée pour tout le monde',
+    'L\'organisateur a mis fin à la réunion',
+    'Vous avez été exclu de la réunion',
+    'Personne n\'a répondu à votre demande de participation',
+    // German
+    'Die Besprechung wurde für alle beendet',
+    'Der Organisator hat die Besprechung beendet',
+    'Sie wurden aus der Besprechung entfernt',
+    'Niemand hat auf Ihre Teilnahmebitte geantwortet',
+    // Portuguese
+    'A reunião terminou para todos',
+    'O organizador encerrou a reunião',
+    'Você foi removido da reunião',
+    'Ninguém respondeu ao seu pedido de participação',
+    // Italian
+    'La riunione è terminata per tutti',
+    'L\'organizzatore ha terminato la riunione',
+    'Sei stato rimosso dalla riunione',
   ];
 
   for (const phrase of permanentExitPhrases) {
@@ -823,11 +849,25 @@ function checkForMeetingExit() {
     'Vous avez quitté la réunion',
     'Sie haben die Besprechung verlassen',
     'Você saiu da reunião',
+    'Hai abbandonato la riunione',
+    'Sei uscito dalla riunione',
+    'Je hebt de vergadering verlaten',
   ];
 
+  const returnHomePhrases = [
+    'Return to home screen',
+    'volver a la pantalla de inicio',
+    'revenir à l\'écran d\'accueil',
+    'zurück zum startbildschirm',
+    'voltar à tela inicial',
+    'torna alla schermata iniziale',
+    'terug naar startscherm',
+  ];
+
+  const lowerText = textContent.toLowerCase();
   const isOnLeftScreen =
     leftPhrases.some((p) => textContent.includes(p)) ||
-    (hasJoinedCallInThisPageLoad && !inActiveCall && textContent.includes('Return to home screen'));
+    (hasJoinedCallInThisPageLoad && !inActiveCall && returnHomePhrases.some((p) => lowerText.includes(p.toLowerCase())));
 
   if (isOnLeftScreen) {
     attachReturnHomeButtonListener();

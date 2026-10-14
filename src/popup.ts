@@ -520,33 +520,47 @@ startBtn?.addEventListener('click', async () => {
       // instead of showing the desktop-capture picker.
       const errMsg: string = tabErr?.message || String(tabErr);
       if (errMsg.toLowerCase().includes('active stream')) {
-        console.warn('[popup] tabCapture: tab already has active stream — re-syncing state with background');
+        console.warn('[popup] tabCapture: tab already has active stream — cleaning up orphaned stream and retrying');
         try {
           const recheck = await chrome.runtime.sendMessage({ type: 'GET_RECORDING_STATUS' });
           if (recheck?.recording) {
             setUI(true, recheck.startedAt, !!recheck.paused, recheck.realStartTime, !!recheck.waitingForRejoin);
             return;
           }
-        } catch {}
-        // If background also says "not recording", the old stream is stale/orphaned.
-        // Surface a clear error rather than opening a confusing screen-share picker.
-        throw new Error(
-          'This tab already has an active capture stream. ' +
-          'If a recording is in progress, please stop it first. ' +
-          'Otherwise, refreshing the Google Meet tab should clear the stale stream.'
-        );
-      }
-
-      console.warn('[popup] tabCapture.getMediaStreamId failed, trying desktopCapture prompt:', tabErr);
-      streamId = await new Promise<string>((resolve, reject) => {
-        chrome.desktopCapture.chooseDesktopMedia(['tab', 'audio'], tab, (id?: string) => {
-          const err = chrome.runtime.lastError;
-          if (err) return reject(new Error(err.message));
-          if (!id) return reject(new Error('Sharing was cancelled'));
-          resolve(id);
+          await chrome.runtime.sendMessage({ type: 'CLEANUP_ORPHANED_STREAM' });
+          await new Promise((r) => setTimeout(r, 150));
+          streamId = await new Promise<string>((resolve, reject) => {
+            chrome.tabCapture.getMediaStreamId({ targetTabId: activeTabId }, (id?: string) => {
+              const err = chrome.runtime.lastError;
+              if (err || !id) return reject(err ? new Error(err.message) : new Error('No streamId returned by tabCapture retry'));
+              resolve(id);
+            });
+          });
+          source = 'tab';
+        } catch (retryErr: any) {
+          console.warn('[popup] tabCapture retry failed, trying desktopCapture prompt:', retryErr);
+          streamId = await new Promise<string>((resolve, reject) => {
+            chrome.desktopCapture.chooseDesktopMedia(['tab', 'audio'], tab, (id?: string) => {
+              const err = chrome.runtime.lastError;
+              if (err) return reject(new Error(err.message));
+              if (!id) return reject(new Error('Sharing was cancelled'));
+              resolve(id);
+            });
+          });
+          source = 'desktop';
+        }
+      } else {
+        console.warn('[popup] tabCapture.getMediaStreamId failed, trying desktopCapture prompt:', tabErr);
+        streamId = await new Promise<string>((resolve, reject) => {
+          chrome.desktopCapture.chooseDesktopMedia(['tab', 'audio'], tab, (id?: string) => {
+            const err = chrome.runtime.lastError;
+            if (err) return reject(new Error(err.message));
+            if (!id) return reject(new Error('Sharing was cancelled'));
+            resolve(id);
+          });
         });
-      });
-      source = 'desktop';
+        source = 'desktop';
+      }
     }
 
     const resp = await chrome.runtime.sendMessage({

@@ -672,30 +672,14 @@ async function prepareAndRecord(
         } finally {
           pendingChunkWrites.clear();
           pendingAttendance = [];
-          // With tab capture, Chrome auto-mutes the tab — keep the AudioContext→speakers
-          // path alive so the user continues hearing remote participants after recording stops.
-          const keepTab = currentCaptureSource === 'tab';
-          cleanupStreams(keepTab);
+          // Completely release all capture tracks so Chrome immediately un-mutes
+          // native tab audio and clears active capture state for subsequent recordings.
+          cleanupStreams(false);
           capturing = false;
           isPaused = false;
           activeSessionId = null;
           activeTabId = null;
           pushState(false);
-
-          // Deferred cleanup: when the tab audio track ends naturally (tab closed / navigated),
-          // tear down the remaining passthrough resources automatically.
-          if (keepTab && currentTabStream) {
-            const passThroughTrack = currentTabStream.getAudioTracks()[0];
-            if (passThroughTrack && passThroughTrack.readyState === 'live') {
-              passThroughTrack.addEventListener('ended', () => {
-                log('Tab audio passthrough track ended, cleaning up');
-                cleanupTabPassthrough();
-              }, { once: true });
-            } else {
-              // Track already ended, clean up immediately
-              cleanupTabPassthrough();
-            }
-          }
         }
       })();
     };
@@ -997,6 +981,16 @@ function attachRpcListener(port: chrome.runtime.Port): void {
       if (msg?.type === 'REVOKE_BLOB_URL') {
         revokeSessionResources(msg);
         return;
+      }
+
+      if (msg?.type === 'OFFSCREEN_CLEANUP_STREAMS') {
+        cleanupStreams(false);
+        capturing = false;
+        isPaused = false;
+        activeSessionId = null;
+        activeTabId = null;
+        pushState(false);
+        return respond(msg, { ok: true });
       }
 
       if (msg?.type === 'HEARTBEAT') {
