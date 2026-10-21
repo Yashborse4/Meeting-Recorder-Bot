@@ -11,6 +11,7 @@ const scheduler = require('./scheduler');
 const storage = require('./storage');
 const accountManager = require('./accountManager');
 const settingsManager = require('./settingsManager');
+const { openInDefaultBrowser } = require('./openBrowser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -178,6 +179,18 @@ app.delete('/api/recordings/:filename', (req, res) => {
   }
 });
 
+// 16. Open URL in System Default Browser
+app.post('/api/browser/open', (req, res) => {
+  const { url } = req.body;
+  const targetUrl = url || `http://localhost:${PORT}`;
+  try {
+    openInDefaultBrowser(targetUrl);
+    res.json({ ok: true, url: targetUrl });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // Start Background Daemon & HTTP Server
 scheduler.startSchedulerDaemon();
 
@@ -185,6 +198,16 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log('\n========================================================================');
   console.log(`      🚀 Google Meet Recorder Dashboard running at: http://localhost:${PORT}`);
   console.log('========================================================================\n');
+
+  // Automatically launch dashboard in user's default browser if enabled in settings
+  try {
+    const settings = settingsManager.getSettings();
+    if (settings.autoOpenBrowser !== false) {
+      setTimeout(() => {
+        openInDefaultBrowser(`http://localhost:${PORT}`);
+      }, 750);
+    }
+  } catch {}
 });
 
 module.exports = app;

@@ -392,6 +392,46 @@
             <button type="submit" class="btn-primary btn-sm">Save Preferences</button>
           </form>
         </div>
+
+        <!-- 5. Default Browser & Launch Preferences Card -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <div class="settings-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            </div>
+            <div>
+              <h3>Default Browser & Launch Settings</h3>
+              <p>Configure which browser runs the dashboard and Google Meet recorder.</p>
+            </div>
+          </div>
+
+          <form id="form-browser-settings" class="settings-form">
+            <div class="form-group checkbox-group">
+              <label class="switch-control">
+                <input type="checkbox" id="setting-auto-open-browser" checked>
+                <span class="switch-slider"></span>
+              </label>
+              <span class="switch-label"><strong>Auto-open Dashboard in Default Browser on startup</strong> (Launches your system's default browser automatically when running the bot)</span>
+            </div>
+
+            <div class="form-group">
+              <label for="setting-browser-engine">Recording Bot Chromium Engine</label>
+              <select id="setting-browser-engine" class="select-styled" style="text-align: left; padding: 10px 14px;">
+                <option value="testing_chrome">Chrome for Testing (Isolated & Optimized for Hands-Free Capture - Recommended)</option>
+                <option value="system_chrome">Default Installed Google Chrome (System Chrome.exe)</option>
+              </select>
+              <small class="helper-text">Select which browser binary Puppeteer uses to join Google Meet and record video tabs.</small>
+            </div>
+
+            <div style="display: flex; gap: 10px; align-items: center; margin-top: 16px;">
+              <button type="submit" class="btn-primary btn-sm">Save Browser Settings</button>
+              <button type="button" id="btn-test-open-browser" class="btn-secondary btn-sm">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+                Open in Default Browser Now
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </section>
   </main>

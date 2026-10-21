@@ -41,8 +41,24 @@ module.exports = {
   // Timetable file path
   TIMETABLE_FILE: path.resolve(ROOT_DIR, 'timetable.json'),
 
-  // Auto-detect Chrome for Testing or installed Chrome
+  // Auto-detect Chrome for Testing or installed Chrome based on settings
   getExecutablePath: function () {
+    const standardPaths = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    ];
+
+    try {
+      const settings = getSettings();
+      if (settings.browserEngine === 'system_chrome') {
+        for (const p of standardPaths) {
+          if (fs.existsSync(p)) return p;
+        }
+      }
+    } catch {}
+
     const chromeDir = path.resolve(ROOT_DIR, 'chrome');
     if (fs.existsSync(chromeDir)) {
       try {
@@ -55,11 +71,8 @@ module.exports = {
         }
       } catch {}
     }
+
     // Fallback: check standard Windows Google Chrome paths
-    const standardPaths = [
-      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    ];
     for (const p of standardPaths) {
       if (fs.existsSync(p)) return p;
     }

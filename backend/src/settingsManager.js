@@ -14,6 +14,8 @@ const DEFAULT_SETTINGS = {
   botName: 'Meeting Recorder Bot',
   muteMicOnJoin: true,
   turnOffCameraOnJoin: true,
+  autoOpenBrowser: true,
+  browserEngine: 'testing_chrome', // 'testing_chrome' | 'system_chrome'
   autoLeave: {
     enabled: true,
     minParticipants: 2,

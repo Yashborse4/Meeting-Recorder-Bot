@@ -805,6 +805,12 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('setting-bot-name').value = settings.botName || 'Meeting Recorder Bot';
       document.getElementById('setting-mute-mic').checked = settings.muteMicOnJoin !== false;
       document.getElementById('setting-turn-off-cam').checked = settings.turnOffCameraOnJoin !== false;
+
+      // Browser settings
+      const autoOpenEl = document.getElementById('setting-auto-open-browser');
+      if (autoOpenEl) autoOpenEl.checked = settings.autoOpenBrowser !== false;
+      const browserEngineEl = document.getElementById('setting-browser-engine');
+      if (browserEngineEl) browserEngineEl.value = settings.browserEngine || 'testing_chrome';
     } catch {}
   }
 
@@ -876,6 +882,44 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.ok) showToast('Bot preferences saved!');
     } catch {
       showToast('Failed to save bot preferences', 'error');
+    }
+  });
+
+  // Save Browser Settings
+  const formBrowserSettings = document.getElementById('form-browser-settings');
+  const btnTestOpenBrowser = document.getElementById('btn-test-open-browser');
+
+  formBrowserSettings?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = {
+      autoOpenBrowser: document.getElementById('setting-auto-open-browser').checked,
+      browserEngine: document.getElementById('setting-browser-engine').value,
+    };
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.ok) showToast('Browser launch settings saved!');
+    } catch {
+      showToast('Failed to save browser settings', 'error');
+    }
+  });
+
+  // Test Open in Default Browser
+  btnTestOpenBrowser?.addEventListener('click', async () => {
+    try {
+      showToast('Launching in default browser...');
+      await fetch('/api/browser/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: window.location.href }),
+      });
+    } catch {
+      showToast('Could not open default browser', 'error');
     }
   });
 });
