@@ -501,8 +501,12 @@
         <input type="hidden" id="class-id">
 
         <div class="form-group">
-          <label for="class-name">Subject / Class Name</label>
-          <input type="text" id="class-name" placeholder="e.g. Mathematics Lecture" required>
+          <div class="label-with-hint">
+            <label for="class-name">Subject / Class Name</label>
+            <span class="field-hint">Select existing subject to auto-fill Meet link</span>
+          </div>
+          <input type="text" id="class-name" list="existing-subjects-list" placeholder="e.g. Mathematics, Physics, AEM" required autocomplete="off">
+          <datalist id="existing-subjects-list"></datalist>
         </div>
 
         <div class="form-group">
@@ -510,116 +514,41 @@
           <input type="url" id="class-link" placeholder="https://meet.google.com/abc-defg-hij" required>
         </div>
 
-        <div class="form-group">
-          <div class="label-with-presets">
-            <label>Schedule Days (Mon to Sun)</label>
-            <div class="day-presets">
-              <button type="button" class="btn-preset" data-preset="weekdays">Weekdays</button>
-              <button type="button" class="btn-preset" data-preset="weekends">Weekends</button>
-              <button type="button" class="btn-preset" data-preset="all">Everyday</button>
+        <!-- Multi-Day & Multi-Time Schedule Slots Section -->
+        <div class="form-group slots-group">
+          <div class="slots-header-bar">
+            <div>
+              <label class="slots-title">Weekly Schedule & Timings</label>
+              <p class="slots-subtitle">Schedule this subject on multiple days at different times with ease.</p>
             </div>
+            <button type="button" id="btn-add-schedule-slot" class="btn-secondary btn-sm btn-add-slot-header" title="Add another day and time slot for this subject">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              + Add Slot
+            </button>
           </div>
-          <div class="day-checkbox-pills">
-            <label class="day-pill"><input type="checkbox" name="days" value="mon"><span>Mon</span></label>
-            <label class="day-pill"><input type="checkbox" name="days" value="tue"><span>Tue</span></label>
-            <label class="day-pill"><input type="checkbox" name="days" value="wed"><span>Wed</span></label>
-            <label class="day-pill"><input type="checkbox" name="days" value="thu"><span>Thu</span></label>
-            <label class="day-pill"><input type="checkbox" name="days" value="fri"><span>Fri</span></label>
-            <label class="day-pill"><input type="checkbox" name="days" value="sat"><span>Sat</span></label>
-            <label class="day-pill"><input type="checkbox" name="days" value="sun"><span>Sun</span></label>
-          </div>
+
+          <!-- Dynamic Slots List Rendered by app.js -->
+          <div id="schedule-slots-container" class="schedule-slots-container"></div>
+
+          <button type="button" id="btn-add-schedule-slot-bottom" class="btn-dashed-add" title="Add another day/time slot for this same subject">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span>+ Add Another Schedule (Different Day / Time for this Subject)</span>
+          </button>
         </div>
 
-        <div class="form-group time-picker-section">
-          <div class="time-header-row">
-            <label>Class Start Time (Indian Standard Time)</label>
-            <span class="tz-badge-pill">🇮🇳 IST (UTC+5:30)</span>
-          </div>
-
-          <div class="time-picker-grid">
-            <!-- Hour Selector -->
-            <div class="time-col">
-              <label class="time-sublabel" for="time-hour">Hour (1-12)</label>
-              <select id="time-hour" class="select-styled" required>
-                <option value="12">12</option>
-                <option value="01">01</option>
-                <option value="02">02</option>
-                <option value="03">03</option>
-                <option value="04">04</option>
-                <option value="05">05</option>
-                <option value="06">06</option>
-                <option value="07">07</option>
-                <option value="08">08</option>
-                <option value="09" selected>09</option>
-                <option value="10">10</option>
-                <option value="11">11</option>
-              </select>
-            </div>
-
-            <div class="time-separator">:</div>
-
-            <!-- Minute Selector -->
-            <div class="time-col">
-              <label class="time-sublabel" for="time-minute">Minute</label>
-              <select id="time-minute" class="select-styled" required>
-                <option value="00" selected>00</option>
-                <option value="05">05</option>
-                <option value="10">10</option>
-                <option value="15">15</option>
-                <option value="20">20</option>
-                <option value="25">25</option>
-                <option value="30">30</option>
-                <option value="35">35</option>
-                <option value="40">40</option>
-                <option value="45">45</option>
-                <option value="50">50</option>
-                <option value="55">55</option>
-              </select>
-            </div>
-
-            <!-- AM / PM Selector -->
-            <div class="time-col ampm-col">
-              <label class="time-sublabel">AM / PM</label>
-              <div class="ampm-toggle-group">
-                <button type="button" class="btn-ampm active" data-ampm="AM">AM</button>
-                <button type="button" class="btn-ampm" data-ampm="PM">PM</button>
-              </div>
-              <input type="hidden" id="time-ampm" value="AM">
-            </div>
-
-            <!-- Duration Selector -->
-            <div class="time-col duration-col">
-              <label class="time-sublabel" for="class-duration">Duration</label>
-              <div class="input-with-unit">
-                <input type="number" id="class-duration" value="60" min="5" max="360" required>
-                <span class="unit-text">mins</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Hidden input keeping synchronized 24-hr time for backend scheduler -->
-          <input type="hidden" id="class-time" value="09:00">
-
-          <div class="time-preview-banner">
-            <span class="preview-label">Selected Class Time:</span>
-            <strong id="time-preview-text" class="preview-value">09:00 AM IST</strong>
-            <span id="time-24h-hint" class="preview-hint">(24-hour: 09:00)</span>
-          </div>
-        </div>
-
-        <div class="form-group checkbox-group">
+        <div class="form-group checkbox-group" style="margin-top: 18px;">
           <label class="switch-control">
             <input type="checkbox" id="class-enabled" checked>
             <span class="switch-slider"></span>
           </label>
-          <span class="switch-label">Enable automated recording for this class</span>
+          <span class="switch-label">Enable automated recording for this class schedule</span>
         </div>
 
         <div class="modal-footer">
           <button type="button" id="btn-cancel-modal" class="btn-secondary">Cancel</button>
           <button type="submit" id="btn-save-class" class="btn-primary">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            <span id="btn-save-class-text">Save Changes</span>
+            <span id="btn-save-class-text">Save Schedule</span>
           </button>
         </div>
       </form>

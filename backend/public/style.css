@@ -1011,6 +1011,150 @@ input[type="number"]:focus {
   font-size: 0.85rem;
   color: var(--text-muted);
 }
+
+/* Multi-Slot Schedule Styling */
+.slots-group {
+  margin-top: 18px;
+}
+.slots-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.slots-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+.slots-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.btn-add-slot-header {
+  font-size: 0.78rem;
+  padding: 6px 12px;
+  background: #18181b;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+.schedule-slots-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.slot-card {
+  background: #0d0d10;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  transition: border-color 0.15s ease;
+}
+.slot-card:hover {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.slot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.slot-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.slot-number {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.slot-summary-pill {
+  font-size: 0.74rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+}
+.btn-slot-remove {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-slot-remove:hover {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+}
+.slot-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+.btn-dashed-add {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.35);
+  border-radius: var(--radius-md);
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-dashed-add:hover {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+  border-style: solid;
+}
+.label-with-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.field-hint {
+  font-size: 0.74rem;
+  color: var(--text-dim);
+}
+.btn-card-duplicate {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #18181b;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-card-duplicate:hover {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+}
 .modal-footer {
   display: flex;
   justify-content: flex-end;

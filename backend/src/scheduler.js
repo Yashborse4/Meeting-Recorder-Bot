@@ -118,13 +118,61 @@ function saveTimetable(data) {
 }
 
 function addOrUpdateClass(classData) {
-  const timetable = loadTimetable();
+  let timetable = loadTimetable();
+
+  // Multi-slot support for scheduling the same subject across multiple days and times
+  if (Array.isArray(classData.slots) && classData.slots.length > 0) {
+    const baseName = (classData.name || 'Untitled Class').trim();
+    const baseLink = (classData.link || '').trim();
+    const enabled = classData.enabled !== false;
+    const savedEntries = [];
+
+    // Delete any slots marked for deletion
+    if (Array.isArray(classData.deletedSlotIds) && classData.deletedSlotIds.length > 0) {
+      timetable = timetable.filter((c) => !classData.deletedSlotIds.includes(c.id));
+    }
+
+    classData.slots.forEach((slot, index) => {
+      const slotId = slot.id || `class-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 4)}`;
+      const existingIdx = timetable.findIndex((c) => c.id === slotId);
+
+      const formattedDays = Array.isArray(slot.days)
+        ? slot.days.map((d) => String(d).toLowerCase())
+        : [String(slot.days || 'mon').toLowerCase()];
+
+      const normalizedTime = normalizeTimeTo24(slot.time);
+      const time12 = formatTimeTo12IST(normalizedTime);
+
+      const entry = {
+        id: slotId,
+        name: baseName,
+        link: baseLink,
+        days: formattedDays,
+        time: normalizedTime,
+        time12,
+        duration: parseInt(slot.duration || classData.duration || '60', 10),
+        enabled,
+      };
+
+      if (existingIdx >= 0) {
+        timetable[existingIdx] = entry;
+      } else {
+        timetable.push(entry);
+      }
+      savedEntries.push(entry);
+    });
+
+    saveTimetable(timetable);
+    return savedEntries;
+  }
+
+  // Single slot fallback
   const id = classData.id || `class-${Date.now()}`;
   const existingIdx = timetable.findIndex((c) => c.id === id);
 
   const formattedDays = Array.isArray(classData.days)
-    ? classData.days.map((d) => d.toLowerCase())
-    : [String(classData.days).toLowerCase()];
+    ? classData.days.map((d) => String(d).toLowerCase())
+    : [String(classData.days || 'mon').toLowerCase()];
 
   const normalizedTime = normalizeTimeTo24(classData.time);
   const time12 = formatTimeTo12IST(normalizedTime);

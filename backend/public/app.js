@@ -209,6 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
       statActiveClasses.textContent = `${timetableData.filter((c) => c.enabled).length} active classes`;
 
       renderTimetable();
+      updateSubjectDatalist();
     } catch (e) {
       console.error('Error fetching timetable:', e);
     }
@@ -277,6 +278,10 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="class-card-header">
               <div class="class-title-group">
                 <h4 class="class-card-title">${escapeHtml(item.name)}</h4>
+                <button class="btn-card-duplicate" onclick="duplicateClass('${item.id}')" title="Schedule another day or time for this subject">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  + Add Day/Time
+                </button>
                 <button class="btn-card-edit-quick" onclick="editClass('${item.id}')" title="Edit this class configuration">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   Edit
@@ -342,25 +347,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // -------------------------------------------------------------
-  // INDIAN STANDARD TIME (IST) & 12-HOUR AM/PM CONTROLS
+  // LIVE IST CLOCK (TICKER)
   // -------------------------------------------------------------
-  const timeHour = document.getElementById('time-hour');
-  const timeMinute = document.getElementById('time-minute');
-  const timeAmpm = document.getElementById('time-ampm');
-  const btnAmpmList = document.querySelectorAll('.btn-ampm');
-  const classTimeHidden = document.getElementById('class-time');
-  const timePreviewText = document.getElementById('time-preview-text');
-  const time24hHint = document.getElementById('time-24h-hint');
   const liveIstClock = document.getElementById('live-ist-clock');
-
-  // Populate all 60 minutes (00 - 59)
-  if (timeMinute) {
-    timeMinute.innerHTML = Array.from({ length: 60 }, (_, i) => {
-      const v = String(i).padStart(2, '0');
-      return `<option value="${v}">${v}</option>`;
-    }).join('');
-  }
-
   function updateLiveISTClock() {
     if (!liveIstClock) return;
     try {
@@ -378,35 +367,25 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(updateLiveISTClock, 1000);
   updateLiveISTClock();
 
-  function syncTimeToHidden() {
-    if (!timeHour || !timeMinute || !timeAmpm || !classTimeHidden) return;
-    let h = parseInt(timeHour.value, 10) || 12;
-    const m = (timeMinute.value || '00').padStart(2, '0');
-    const ampm = timeAmpm.value || 'AM';
+  // -------------------------------------------------------------
+  // MULTI-SLOT SCHEDULE & SUBJECT AUTO-COMPLETE BUILDER
+  // -------------------------------------------------------------
+  let currentModalSlots = [];
+  let deletedSlotIds = [];
 
-    let h24 = h;
-    if (ampm === 'PM' && h < 12) h24 = h + 12;
-    if (ampm === 'AM' && h === 12) h24 = 0;
+  const slotsContainer = document.getElementById('schedule-slots-container');
+  const btnAddScheduleSlot = document.getElementById('btn-add-schedule-slot');
+  const btnAddScheduleSlotBottom = document.getElementById('btn-add-schedule-slot-bottom');
+  const classNameInput = document.getElementById('class-name');
+  const classLinkInput = document.getElementById('class-link');
+  const existingSubjectsDatalist = document.getElementById('existing-subjects-list');
 
-    const hh24Str = String(h24).padStart(2, '0');
-    classTimeHidden.value = `${hh24Str}:${m}`;
-
-    if (timePreviewText) {
-      timePreviewText.textContent = `${timeHour.value}:${m} ${ampm} IST`;
-    }
-    if (time24hHint) {
-      time24hHint.textContent = `(24-hour: ${hh24Str}:${m})`;
-    }
-  }
-
-  function setTimeFrom24(timeStr) {
-    if (!timeHour || !timeMinute || !timeAmpm) return;
+  function parseTimeToParts(timeStr) {
     let h = 9;
     let m = 0;
     let ampm = 'AM';
 
     if (timeStr) {
-      // Strip trailing timezone like "IST", "GMT", "UTC"
       const cleaned = String(timeStr).trim().replace(/\s+(IST|GMT|UTC[+-]?\d*)$/i, '');
       const match = cleaned.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i);
       if (match) {
@@ -422,46 +401,269 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     }
-
-    timeHour.value = String(h).padStart(2, '0');
-    timeMinute.value = String(m).padStart(2, '0');
-    timeAmpm.value = ampm;
-
-    btnAmpmList.forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.ampm === ampm);
-    });
-
-    syncTimeToHidden();
+    return {
+      hour: String(h).padStart(2, '0'),
+      minute: String(m).padStart(2, '0'),
+      ampm: ampm,
+    };
   }
 
-  btnAmpmList.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      btnAmpmList.forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      if (timeAmpm) timeAmpm.value = btn.dataset.ampm;
-      syncTimeToHidden();
+  function createDefaultSlot(days = ['mon', 'wed', 'fri'], timeStr = '09:00 AM', duration = 60, id = '') {
+    const parts = parseTimeToParts(timeStr);
+    return {
+      id: id || '',
+      days: Array.isArray(days) ? [...days] : [String(days)],
+      hour: parts.hour,
+      minute: parts.minute,
+      ampm: parts.ampm,
+      duration: parseInt(duration, 10) || 60,
+    };
+  }
+
+  function getSlotTime12(slot) {
+    return `${slot.hour}:${slot.minute} ${slot.ampm} IST`;
+  }
+
+  function getSlotDaysSummary(days) {
+    if (!days || days.length === 0) return 'No days selected';
+    if (days.length === 7) return 'Everyday (Mon - Sun)';
+    const dayOrder = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    const sorted = [...days].sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b));
+    return sorted.map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(', ');
+  }
+
+  function updateSubjectDatalist() {
+    if (!existingSubjectsDatalist) return;
+    const subjectMap = new Map();
+    timetableData.forEach((item) => {
+      if (item.name && item.name.trim()) {
+        const key = item.name.trim().toLowerCase();
+        if (!subjectMap.has(key)) {
+          subjectMap.set(key, { name: item.name.trim(), link: item.link || '' });
+        }
+      }
     });
+
+    existingSubjectsDatalist.innerHTML = Array.from(subjectMap.values())
+      .map((s) => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.link ? s.link : '')}</option>`)
+      .join('');
+  }
+
+  // Auto-fill Google Meet URL when user selects or types an existing subject
+  classNameInput?.addEventListener('input', () => {
+    const val = (classNameInput.value || '').trim().toLowerCase();
+    if (!val) return;
+    const match = timetableData.find((c) => (c.name || '').trim().toLowerCase() === val);
+    if (match && match.link && (!classLinkInput.value || classLinkInput.value === '')) {
+      classLinkInput.value = match.link;
+    }
   });
 
-  timeHour?.addEventListener('change', syncTimeToHidden);
-  timeMinute?.addEventListener('change', syncTimeToHidden);
+  function renderModalSlots() {
+    if (!slotsContainer) return;
+    if (currentModalSlots.length === 0) {
+      currentModalSlots = [createDefaultSlot()];
+    }
+
+    const daysList = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    const hoursList = ['12', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'];
+    const minutesList = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
+
+    slotsContainer.innerHTML = currentModalSlots.map((slot, idx) => {
+      const time12Str = getSlotTime12(slot);
+      const daysSummary = getSlotDaysSummary(slot.days);
+
+      const dayPillsHtml = daysList.map((d) => {
+        const isChecked = slot.days.includes(d);
+        const label = d.charAt(0).toUpperCase() + d.slice(1);
+        return `
+          <label class="day-pill">
+            <input type="checkbox" name="slot_${idx}_day" value="${d}" ${isChecked ? 'checked' : ''} onchange="toggleSlotDay(${idx}, '${d}')">
+            <span>${label}</span>
+          </label>
+        `;
+      }).join('');
+
+      return `
+        <div class="slot-card" data-slot-index="${idx}">
+          <div class="slot-header">
+            <div class="slot-badge">
+              <span class="slot-number">Schedule Slot #${idx + 1}</span>
+              <span class="slot-summary-pill">${time12Str} (${daysSummary})</span>
+            </div>
+            ${currentModalSlots.length > 1 ? `
+              <button type="button" class="btn-slot-remove" onclick="removeSlot(${idx})" title="Remove this schedule slot">
+                ✕ Remove Slot
+              </button>
+            ` : ''}
+          </div>
+
+          <div class="slot-body">
+            <div class="slot-days-row">
+              <div class="label-with-presets">
+                <label class="slot-label">Select Days (Mon - Sun)</label>
+                <div class="day-presets">
+                  <button type="button" class="btn-preset" onclick="applySlotPreset(${idx}, 'weekdays')">Weekdays</button>
+                  <button type="button" class="btn-preset" onclick="applySlotPreset(${idx}, 'mwf')">Mon, Wed, Fri</button>
+                  <button type="button" class="btn-preset" onclick="applySlotPreset(${idx}, 'tts')">Tue, Thu, Sat</button>
+                  <button type="button" class="btn-preset" onclick="applySlotPreset(${idx}, 'all')">Everyday</button>
+                </div>
+              </div>
+              <div class="day-checkbox-pills">
+                ${dayPillsHtml}
+              </div>
+            </div>
+
+            <div class="time-picker-section" style="margin-top: 14px;">
+              <div class="time-header-row">
+                <label class="slot-label">Class Timing & Duration</label>
+                <span class="tz-badge-pill">🇮🇳 IST (UTC+5:30)</span>
+              </div>
+
+              <div class="time-picker-grid">
+                <!-- Hour -->
+                <div class="time-col">
+                  <label class="time-sublabel">Hour (1-12)</label>
+                  <select class="select-styled" onchange="updateSlotTime(${idx}, 'hour', this.value)">
+                    ${hoursList.map((h) => `<option value="${h}" ${slot.hour === h ? 'selected' : ''}>${h}</option>`).join('')}
+                  </select>
+                </div>
+
+                <div class="time-separator">:</div>
+
+                <!-- Minute -->
+                <div class="time-col">
+                  <label class="time-sublabel">Minute</label>
+                  <select class="select-styled" onchange="updateSlotTime(${idx}, 'minute', this.value)">
+                    ${minutesList.map((m) => `<option value="${m}" ${slot.minute === m ? 'selected' : ''}>${m}</option>`).join('')}
+                  </select>
+                </div>
+
+                <!-- AM / PM -->
+                <div class="time-col ampm-col">
+                  <label class="time-sublabel">AM / PM</label>
+                  <div class="ampm-toggle-group">
+                    <button type="button" class="btn-ampm ${slot.ampm === 'AM' ? 'active' : ''}" onclick="setSlotAmpm(${idx}, 'AM')">AM</button>
+                    <button type="button" class="btn-ampm ${slot.ampm === 'PM' ? 'active' : ''}" onclick="setSlotAmpm(${idx}, 'PM')">PM</button>
+                  </div>
+                </div>
+
+                <!-- Duration -->
+                <div class="time-col duration-col">
+                  <label class="time-sublabel">Duration</label>
+                  <div class="input-with-unit">
+                    <input type="number" class="select-styled" value="${slot.duration || 60}" min="5" max="360" onchange="updateSlotTime(${idx}, 'duration', this.value)" required>
+                    <span class="unit-text">mins</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="time-preview-banner">
+                <span class="preview-label">Timing:</span>
+                <strong class="preview-value">${time12Str}</strong>
+                <span class="preview-hint">(${daysSummary} • ${slot.duration || 60} mins)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  window.toggleSlotDay = function (slotIdx, day) {
+    if (!currentModalSlots[slotIdx]) return;
+    const days = currentModalSlots[slotIdx].days;
+    const pos = days.indexOf(day);
+    if (pos >= 0) {
+      if (days.length > 1) days.splice(pos, 1);
+      else showToast('At least one day must be selected for this slot', 'error');
+    } else {
+      days.push(day);
+    }
+    renderModalSlots();
+  };
+
+  window.applySlotPreset = function (slotIdx, preset) {
+    if (!currentModalSlots[slotIdx]) return;
+    if (preset === 'weekdays') currentModalSlots[slotIdx].days = ['mon', 'tue', 'wed', 'thu', 'fri'];
+    else if (preset === 'mwf') currentModalSlots[slotIdx].days = ['mon', 'wed', 'fri'];
+    else if (preset === 'tts') currentModalSlots[slotIdx].days = ['tue', 'thu', 'sat'];
+    else if (preset === 'all') currentModalSlots[slotIdx].days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    else if (preset === 'weekends') currentModalSlots[slotIdx].days = ['sat', 'sun'];
+    renderModalSlots();
+  };
+
+  window.updateSlotTime = function (slotIdx, field, val) {
+    if (!currentModalSlots[slotIdx]) return;
+    if (field === 'duration') {
+      currentModalSlots[slotIdx].duration = parseInt(val, 10) || 60;
+    } else {
+      currentModalSlots[slotIdx][field] = val;
+    }
+    renderModalSlots();
+  };
+
+  window.setSlotAmpm = function (slotIdx, ampm) {
+    if (!currentModalSlots[slotIdx]) return;
+    currentModalSlots[slotIdx].ampm = ampm;
+    renderModalSlots();
+  };
+
+  window.removeSlot = function (slotIdx) {
+    if (currentModalSlots.length <= 1) {
+      showToast('You must have at least one schedule slot.', 'error');
+      return;
+    }
+    const removed = currentModalSlots[slotIdx];
+    if (removed && removed.id) {
+      deletedSlotIds.push(removed.id);
+    }
+    currentModalSlots.splice(slotIdx, 1);
+    renderModalSlots();
+  };
+
+  function addScheduleSlot() {
+    let nextDays = ['mon', 'wed', 'fri'];
+    let nextTimeStr = '02:00 PM';
+    if (currentModalSlots.length > 0) {
+      const last = currentModalSlots[currentModalSlots.length - 1];
+      if (last.days.includes('mon') && !last.days.includes('tue')) {
+        nextDays = ['tue', 'thu'];
+      } else if (last.days.includes('sat')) {
+        nextDays = ['sun'];
+      }
+      nextTimeStr = last.ampm === 'AM' ? '02:00 PM' : '10:00 AM';
+    }
+    currentModalSlots.push(createDefaultSlot(nextDays, nextTimeStr, 60));
+    renderModalSlots();
+
+    setTimeout(() => {
+      const allSlots = document.querySelectorAll('.slot-card');
+      const lastEl = allSlots[allSlots.length - 1];
+      if (lastEl) lastEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
+  }
+
+  btnAddScheduleSlot?.addEventListener('click', addScheduleSlot);
+  btnAddScheduleSlotBottom?.addEventListener('click', addScheduleSlot);
 
   // Modal open/close
   btnOpenAddModal.addEventListener('click', () => {
     isEditingId = null;
+    deletedSlotIds = [];
     modalTitle.textContent = 'Add Scheduled Class';
     const subtitleEl = document.getElementById('modal-subtitle');
-    if (subtitleEl) subtitleEl.textContent = 'Configure class timing, Meet link, and weekly schedule';
+    if (subtitleEl) subtitleEl.textContent = 'Configure subject timing, Meet link, and weekly schedule slots';
     const btnSaveText = document.getElementById('btn-save-class-text');
-    if (btnSaveText) btnSaveText.textContent = 'Schedule Class';
+    if (btnSaveText) btnSaveText.textContent = 'Save Schedule';
+
     classForm.reset();
     document.getElementById('class-id').value = '';
-    document.getElementById('class-duration').value = '60';
     document.getElementById('class-enabled').checked = true;
-    document.querySelectorAll('input[name="days"]').forEach((cb) => {
-      cb.checked = ['mon', 'tue', 'wed', 'thu', 'fri'].includes(cb.value);
-    });
-    setTimeFrom24('09:00 AM');
+
+    currentModalSlots = [createDefaultSlot(['mon', 'tue', 'wed', 'thu', 'fri'], '09:00 AM', 60)];
+    renderModalSlots();
+
     classModal.style.display = 'flex';
     const modalWin = document.querySelector('.modal-window');
     if (modalWin) modalWin.scrollTop = 0;
@@ -474,37 +676,55 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target === classModal) closeModal();
   });
 
-  // Day preset buttons inside modal
-  document.querySelectorAll('.btn-preset').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const preset = btn.dataset.preset;
-      const checkboxes = document.querySelectorAll('input[name="days"]');
-      checkboxes.forEach((cb) => {
-        if (preset === 'all') cb.checked = true;
-        else if (preset === 'weekdays') cb.checked = ['mon', 'tue', 'wed', 'thu', 'fri'].includes(cb.value);
-        else if (preset === 'weekends') cb.checked = ['sat', 'sun'].includes(cb.value);
-      });
-    });
-  });
-
-  // Save / Update Class Form
+  // Save / Update Class Form (with Multi-Slot Support)
   classForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    const selectedDays = Array.from(document.querySelectorAll('input[name="days"]:checked')).map((c) => c.value);
-    if (selectedDays.length === 0) {
-      showToast('Please select at least one day (Mon - Sun).', 'error');
+    const subjectName = document.getElementById('class-name').value.trim();
+    const meetLink = document.getElementById('class-link').value.trim();
+    const enabled = document.getElementById('class-enabled').checked;
+
+    if (!subjectName) {
+      showToast('Please enter a subject / class name.', 'error');
+      return;
+    }
+    if (!meetLink || !meetLink.includes('meet.google.com')) {
+      showToast('Please enter a valid Google Meet link.', 'error');
       return;
     }
 
+    if (currentModalSlots.length === 0) {
+      showToast('Please add at least one schedule slot.', 'error');
+      return;
+    }
+
+    for (let i = 0; i < currentModalSlots.length; i++) {
+      const slot = currentModalSlots[i];
+      if (!slot.days || slot.days.length === 0) {
+        showToast(`Please select at least one day for Slot #${i + 1}`, 'error');
+        return;
+      }
+    }
+
+    const payloadSlots = currentModalSlots.map((slot) => {
+      let h = parseInt(slot.hour, 10);
+      if (slot.ampm === 'PM' && h < 12) h += 12;
+      if (slot.ampm === 'AM' && h === 12) h = 0;
+      const time24 = `${String(h).padStart(2, '0')}:${slot.minute}`;
+      return {
+        id: slot.id || undefined,
+        days: slot.days,
+        time: time24,
+        duration: parseInt(slot.duration || 60, 10),
+      };
+    });
+
     const payload = {
-      id: document.getElementById('class-id').value || undefined,
-      name: document.getElementById('class-name').value.trim(),
-      link: document.getElementById('class-link').value.trim(),
-      days: selectedDays,
-      time: document.getElementById('class-time').value,
-      duration: parseInt(document.getElementById('class-duration').value, 10),
-      enabled: document.getElementById('class-enabled').checked,
+      name: subjectName,
+      link: meetLink,
+      enabled,
+      slots: payloadSlots,
+      deletedSlotIds,
     };
 
     try {
@@ -516,7 +736,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
 
-      showToast(isEditingId ? 'Class updated successfully!' : 'Class scheduled successfully!');
+      showToast(`Schedule for "${subjectName}" saved (${payloadSlots.length} slot${payloadSlots.length > 1 ? 's' : ''})!`);
       closeModal();
       fetchTimetable();
       fetchStatus();
@@ -551,34 +771,73 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch {}
   };
 
+  window.duplicateClass = function (id) {
+    const item = timetableData.find((c) => c.id === id);
+    if (!item) return;
+
+    isEditingId = null;
+    deletedSlotIds = [];
+    modalTitle.textContent = `Add Schedule for "${item.name}"`;
+    const subtitleEl = document.getElementById('modal-subtitle');
+    if (subtitleEl) subtitleEl.textContent = `Quickly add another day or time for this subject`;
+    const btnSaveText = document.getElementById('btn-save-class-text');
+    if (btnSaveText) btnSaveText.textContent = 'Add to Timetable';
+
+    document.getElementById('class-id').value = '';
+    document.getElementById('class-name').value = item.name || '';
+    document.getElementById('class-link').value = item.link || '';
+    document.getElementById('class-enabled').checked = item.enabled !== false;
+
+    let nextDays = ['mon', 'wed', 'fri'];
+    const itemDays = (Array.isArray(item.days) ? item.days : [item.days]).map((d) => String(d).toLowerCase().slice(0, 3));
+    if (itemDays.includes('mon') && !itemDays.includes('tue')) {
+      nextDays = ['tue', 'thu'];
+    } else if (itemDays.includes('sat')) {
+      nextDays = ['sun'];
+    }
+
+    currentModalSlots = [createDefaultSlot(nextDays, item.time12 || item.time || '11:00 AM', item.duration || 60, '')];
+    renderModalSlots();
+
+    classModal.style.display = 'flex';
+    const modalWin = document.querySelector('.modal-window');
+    if (modalWin) modalWin.scrollTop = 0;
+  };
+
   window.editClass = function (id) {
     const item = timetableData.find((c) => c.id === id);
     if (!item) return;
 
     isEditingId = id;
+    deletedSlotIds = [];
     modalTitle.textContent = 'Edit Scheduled Class';
     const subtitleEl = document.getElementById('modal-subtitle');
-    if (subtitleEl) subtitleEl.textContent = `Modify scheduled time, Meet link, or active days for "${item.name}"`;
+    if (subtitleEl) subtitleEl.textContent = `Modify scheduled times, days, or add new slots for "${item.name}"`;
     const btnSaveText = document.getElementById('btn-save-class-text');
     if (btnSaveText) btnSaveText.textContent = 'Save Changes';
 
     document.getElementById('class-id').value = item.id;
     document.getElementById('class-name').value = item.name || '';
     document.getElementById('class-link').value = item.link || '';
-    setTimeFrom24(item.time12 || item.time);
-    document.getElementById('class-duration').value = item.duration || 60;
     document.getElementById('class-enabled').checked = item.enabled !== false;
 
-    // Accurately map days (handling full names e.g. "monday", "wednesday", and abbreviations "mon", "wed")
-    const itemDays = (Array.isArray(item.days) ? item.days : [item.days]).map((d) =>
-      String(d).toLowerCase().trim().slice(0, 3)
+    // Load related slots for the same subject if multiple exist
+    const subjectNameLower = (item.name || '').trim().toLowerCase();
+    const relatedSlots = timetableData.filter(
+      (c) => (c.name || '').trim().toLowerCase() === subjectNameLower
     );
-    const isAll = itemDays.includes('all') || itemDays.includes('*');
-    document.querySelectorAll('input[name="days"]').forEach((cb) => {
-      const cbVal = cb.value.toLowerCase().slice(0, 3);
-      cb.checked = isAll || itemDays.includes(cbVal);
-    });
 
+    if (relatedSlots.length > 0) {
+      currentModalSlots = relatedSlots.map((c) => {
+        const itemDays = (Array.isArray(c.days) ? c.days : [c.days]).map((d) => String(d).toLowerCase().slice(0, 3));
+        return createDefaultSlot(itemDays, c.time12 || c.time, c.duration || 60, c.id);
+      });
+    } else {
+      const itemDays = (Array.isArray(item.days) ? item.days : [item.days]).map((d) => String(d).toLowerCase().slice(0, 3));
+      currentModalSlots = [createDefaultSlot(itemDays, item.time12 || item.time, item.duration || 60, item.id)];
+    }
+
+    renderModalSlots();
     classModal.style.display = 'flex';
     const modalWin = document.querySelector('.modal-window');
     if (modalWin) modalWin.scrollTop = 0;
