@@ -3,6 +3,7 @@
  * Google Meet navigation, lobby automation, and recording controller with auto-leave rules
  */
 
+const fs = require('fs');
 const { createBrowser } = require('./browser');
 const { waitForDownloads, writeSessionMetadata } = require('./storage');
 const { getSettings } = require('./settingsManager');
@@ -238,6 +239,19 @@ class MeetRecorderBot {
         throw new Error(message);
       }
 
+      // Auto-dismiss any blocking prompt dialogs if present ("Got it", "Dismiss", "Join anyway")
+      try {
+        await this.page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
+          for (const b of buttons) {
+            const text = (b.innerText || '').trim().toLowerCase();
+            if (text === 'got it' || text === 'dismiss' || text === 'join anyway') {
+              b.click();
+            }
+          }
+        });
+      } catch {}
+
       // Find and click Join / Rejoin / Ask to join button
       const clicked = await this.page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
@@ -277,8 +291,14 @@ class MeetRecorderBot {
 
     // Turn on live captions in Meet so the content script can harvest transcripts
     try {
+      await this.page.evaluate(() => {
+        const captionBtn = document.querySelector('button[aria-label*="caption" i], button[aria-label*="subtitles" i]');
+        if (captionBtn && captionBtn.getAttribute('aria-pressed') !== 'true') {
+          captionBtn.click();
+        }
+      });
       await this.page.keyboard.press('KeyC');
-      console.log('[Backend/MeetBot] Turned on captions (KeyC) after admission.');
+      console.log('[Backend/MeetBot] Live captions enabled.');
     } catch {}
   }
 
@@ -295,9 +315,10 @@ class MeetRecorderBot {
 
     console.log('[Backend/MeetBot] Inside meeting room confirmed! Starting recording now...');
 
-    // In-page DOM event (zero user interaction required)
+    // In-page DOM events (zero user interaction required)
     await this.page.evaluate(() => {
       window.postMessage({ type: 'START_RECORDING_BOT' }, '*');
+      window.dispatchEvent(new CustomEvent('START_RECORDING_BOT'));
     });
 
     this.isRecording = true;
@@ -470,17 +491,29 @@ class MeetRecorderBot {
     if (!this.page || !this.isRecording) return;
     console.log('[Backend/MeetBot] Dispatching STOP_RECORDING_BOT event...');
 
+    // Snapshot existing files before trigger to reliably track newly created recordings
+    let initialFiles = null;
+    try {
+      if (fs.existsSync(this.downloadDir)) {
+        initialFiles = new Set(fs.readdirSync(this.downloadDir));
+      }
+    } catch {}
+
     try {
       await this.page.evaluate(() => {
         window.postMessage({ type: 'STOP_RECORDING_BOT' }, '*');
+        window.dispatchEvent(new CustomEvent('STOP_RECORDING_BOT'));
       });
     } catch {}
 
     this.isRecording = false;
     console.log(`[Backend/MeetBot] Stop command sent. Waiting for downloads in ${this.downloadDir}...`);
 
-    // Wait for the .webm and transcripts to finish saving
-    const results = await waitForDownloads(this.downloadDir);
+    // Give browser a moment to initiate file stream
+    await new Promise((r) => setTimeout(r, 2000));
+
+    // Wait for the new .webm and transcripts to finish saving
+    const results = await waitForDownloads(this.downloadDir, 45000, initialFiles);
     writeSessionMetadata(this.downloadDir, {
       completedAt: new Date().toISOString(),
       files: results,

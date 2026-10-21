@@ -6,7 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 
-async function waitForDownloads(downloadDir, timeoutMs = 45000) {
+async function waitForDownloads(downloadDir, timeoutMs = 45000, initialFiles = null) {
   console.log(`[Backend/Storage] Monitoring ${downloadDir} for completed files...`);
   const startTime = Date.now();
 
@@ -18,33 +18,39 @@ async function waitForDownloads(downloadDir, timeoutMs = 45000) {
       }
 
       try {
+        if (!fs.existsSync(downloadDir)) return;
         const files = fs.readdirSync(downloadDir);
         // Chrome downloads have .crdownload extension while downloading
         const activeDownloads = files.filter((f) => f.endsWith('.crdownload') || f.endsWith('.tmp'));
 
-        if (activeDownloads.length === 0 && files.length > 0) {
-          // Identify the newly downloaded media and transcript files
-          const webmFiles = files.filter((f) => f.endsWith('.webm'));
-          const txtFiles = files.filter((f) => f.endsWith('.txt'));
-          const vttFiles = files.filter((f) => f.endsWith('.vtt'));
-          const csvFiles = files.filter((f) => f.endsWith('.csv'));
+        // Don't finish while Chrome is actively downloading
+        if (activeDownloads.length > 0) return;
 
-          if (webmFiles.length > 0 || txtFiles.length > 0) {
-            clearInterval(checkInterval);
-            console.log('[Backend/Storage] All downloads finalized successfully:');
-            console.log(`  - Video: ${webmFiles.join(', ') || 'none'}`);
-            console.log(`  - Transcripts: ${txtFiles.join(', ') || 'none'}`);
-            console.log(`  - Subtitles: ${vttFiles.join(', ') || 'none'}`);
-            console.log(`  - Attendance: ${csvFiles.join(', ') || 'none'}`);
+        // If initialFiles snapshot was provided, focus on new files
+        const candidateFiles = initialFiles
+          ? files.filter((f) => !initialFiles.has(f) && !f.startsWith('.'))
+          : files.filter((f) => !f.startsWith('.'));
 
-            return resolve({
-              directory: downloadDir,
-              videos: webmFiles.map((f) => path.join(downloadDir, f)),
-              transcripts: txtFiles.map((f) => path.join(downloadDir, f)),
-              subtitles: vttFiles.map((f) => path.join(downloadDir, f)),
-              attendance: csvFiles.map((f) => path.join(downloadDir, f)),
-            });
-          }
+        const webmFiles = candidateFiles.filter((f) => f.endsWith('.webm') || f.endsWith('.mp4'));
+        const txtFiles = candidateFiles.filter((f) => f.endsWith('.txt'));
+        const vttFiles = candidateFiles.filter((f) => f.endsWith('.vtt'));
+        const csvFiles = candidateFiles.filter((f) => f.endsWith('.csv'));
+
+        if (webmFiles.length > 0 || txtFiles.length > 0) {
+          clearInterval(checkInterval);
+          console.log('[Backend/Storage] All downloads finalized successfully:');
+          console.log(`  - Video: ${webmFiles.join(', ') || 'none'}`);
+          console.log(`  - Transcripts: ${txtFiles.join(', ') || 'none'}`);
+          console.log(`  - Subtitles: ${vttFiles.join(', ') || 'none'}`);
+          console.log(`  - Attendance: ${csvFiles.join(', ') || 'none'}`);
+
+          return resolve({
+            directory: downloadDir,
+            videos: webmFiles.map((f) => path.join(downloadDir, f)),
+            transcripts: txtFiles.map((f) => path.join(downloadDir, f)),
+            subtitles: vttFiles.map((f) => path.join(downloadDir, f)),
+            attendance: csvFiles.map((f) => path.join(downloadDir, f)),
+          });
         }
       } catch (err) {
         // Directory read error, retry next tick

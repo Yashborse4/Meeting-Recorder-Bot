@@ -21,11 +21,12 @@ let daemonInterval = null;
 const recordedToday = new Set(); // Prevents duplicate recordings on the same day
 
 /**
- * Normalizes any time string (e.g. "02:30 PM", "2:30pm", "14:30") to standard "HH:MM" 24h format
+ * Normalizes any time string (e.g. "02:30 PM", "2:30pm", "14:30", "02:30 PM IST") to standard "HH:MM" 24h format
  */
 function normalizeTimeTo24(timeStr) {
   if (!timeStr) return '09:00';
-  const match = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+  const cleaned = String(timeStr).trim().replace(/\s+(IST|GMT|UTC[+-]?\d*)$/i, '');
+  const match = cleaned.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
   if (!match) return String(timeStr);
   let [_, hStr, mStr, ampm] = match;
   let h = parseInt(hStr, 10);
@@ -266,7 +267,8 @@ function getNextUpcoming(timetable) {
     const targetMinutes = hh * 60 + mm;
 
     for (const d of item.days) {
-      const dayIdx = DAY_NAMES.indexOf(d.toLowerCase());
+      const d3 = String(d).toLowerCase().trim().slice(0, 3);
+      const dayIdx = DAY_NAMES.indexOf(d3);
       if (dayIdx === -1) continue;
 
       let dayDelta = (dayIdx - currentDayIdx + 7) % 7;
@@ -546,8 +548,13 @@ async function checkAndTriggerSchedule() {
   for (const item of timetable) {
     if (!item.enabled) continue;
 
-    const itemDays = (Array.isArray(item.days) ? item.days : [item.days]).map((d) => d.toLowerCase());
-    const isToday = itemDays.includes(currentDay) || itemDays.includes('all') || itemDays.includes('*');
+    const itemDays = (Array.isArray(item.days) ? item.days : [item.days]).map((d) =>
+      String(d).toLowerCase().trim().slice(0, 3)
+    );
+    const isToday =
+      itemDays.includes(currentDay) ||
+      itemDays.includes('all') ||
+      itemDays.includes('*');
     const normalizedItemTime = normalizeTimeTo24(item.time);
 
     if (isToday && normalizedItemTime === currentHHMM) {

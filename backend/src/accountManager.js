@@ -11,8 +11,22 @@ const config = require('./config');
 const ROOT_DIR = path.resolve(__dirname, '..');
 const BOT_PROFILE_DIR = path.resolve(ROOT_DIR, 'bot_profile');
 
-// Typical default Google Chrome user data path on Windows
-const SYSTEM_CHROME_DIR = 'C:\\Users\\yashb\\AppData\\Local\\Google\\Chrome\\User Data\\Default';
+// Detect Google Chrome Default user data path
+function getSystemChromeDir() {
+  const candidates = [
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'User Data', 'Default') : null,
+    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'AppData', 'Local', 'Google', 'Chrome', 'User Data', 'Default') : null,
+    '/mnt/c/Users/yashb/AppData/Local/Google/Chrome/User Data/Default',
+    'C:\\Users\\yashb\\AppData\\Local\\Google\\Chrome\\User Data\\Default',
+  ].filter(Boolean);
+
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return candidates[candidates.length - 1];
+}
+
+const SYSTEM_CHROME_DIR = getSystemChromeDir();
 
 function readAccountFromPreferences(prefPath) {
   if (!fs.existsSync(prefPath)) return null;

@@ -32,7 +32,8 @@ async function createBrowser(options = {}) {
     args,
   });
 
-  const page = await browser.newPage();
+  const pages = await browser.pages();
+  const page = pages.length > 0 ? pages[0] : await browser.newPage();
 
   // Configure Chrome DevTools Protocol to route downloads to configured storage folder
   const cdpSession = await page.target().createCDPSession();
