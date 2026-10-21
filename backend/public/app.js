@@ -243,7 +243,13 @@ document.addEventListener('DOMContentLoaded', () => {
         <div class="class-card ${!item.enabled ? 'disabled' : ''}">
           <div>
             <div class="class-card-header">
-              <h4 class="class-card-title">${escapeHtml(item.name)}</h4>
+              <div class="class-title-group">
+                <h4 class="class-card-title">${escapeHtml(item.name)}</h4>
+                <button class="btn-card-edit-quick" onclick="editClass('${item.id}')" title="Edit this class configuration">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  Edit
+                </button>
+              </div>
               <label class="switch-control" title="Toggle active status">
                 <input type="checkbox" ${item.enabled ? 'checked' : ''} onchange="toggleActiveClass('${item.id}')">
                 <span class="switch-slider"></span>
@@ -274,12 +280,12 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
 
           <div class="class-card-actions">
-            <button class="btn-secondary btn-sm" onclick="editClass('${item.id}')">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              Edit
+            <button class="btn-card-edit-prominent" onclick="editClass('${item.id}')" title="Edit class settings, link and time">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Edit Class
             </button>
-            <div style="display: flex; gap: 6px;">
-              <button class="btn-secondary btn-sm" onclick="triggerImmediate('${escapeHtml(item.link)}', ${item.duration || 60}, '${escapeHtml(item.name)}')" title="Launch and record this class now">
+            <div style="display: flex; gap: 8px;">
+              <button class="btn-card-record" onclick="triggerImmediate('${escapeHtml(item.link)}', ${item.duration || 60}, '${escapeHtml(item.name)}')" title="Launch and record this class now">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 Record Now
               </button>
@@ -368,7 +374,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let ampm = 'AM';
 
     if (timeStr) {
-      const match = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+      // Strip trailing timezone like "IST", "GMT", "UTC"
+      const cleaned = String(timeStr).trim().replace(/\s+(IST|GMT|UTC[+-]?\d*)$/i, '');
+      const match = cleaned.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i);
       if (match) {
         let [_, hStr, mStr, rawAmpm] = match;
         let rawH = parseInt(hStr, 10);
@@ -410,12 +418,21 @@ document.addEventListener('DOMContentLoaded', () => {
   btnOpenAddModal.addEventListener('click', () => {
     isEditingId = null;
     modalTitle.textContent = 'Add Scheduled Class';
+    const subtitleEl = document.getElementById('modal-subtitle');
+    if (subtitleEl) subtitleEl.textContent = 'Configure class timing, Meet link, and weekly schedule';
+    const btnSaveText = document.getElementById('btn-save-class-text');
+    if (btnSaveText) btnSaveText.textContent = 'Schedule Class';
     classForm.reset();
     document.getElementById('class-id').value = '';
     document.getElementById('class-duration').value = '60';
     document.getElementById('class-enabled').checked = true;
+    document.querySelectorAll('input[name="days"]').forEach((cb) => {
+      cb.checked = ['mon', 'tue', 'wed', 'thu', 'fri'].includes(cb.value);
+    });
     setTimeFrom24('09:00 AM');
     classModal.style.display = 'flex';
+    const modalWin = document.querySelector('.modal-window');
+    if (modalWin) modalWin.scrollTop = 0;
   });
 
   const closeModal = () => (classModal.style.display = 'none');
@@ -508,19 +525,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     isEditingId = id;
     modalTitle.textContent = 'Edit Scheduled Class';
+    const subtitleEl = document.getElementById('modal-subtitle');
+    if (subtitleEl) subtitleEl.textContent = `Modify scheduled time, Meet link, or active days for "${item.name}"`;
+    const btnSaveText = document.getElementById('btn-save-class-text');
+    if (btnSaveText) btnSaveText.textContent = 'Save Changes';
+
     document.getElementById('class-id').value = item.id;
-    document.getElementById('class-name').value = item.name;
-    document.getElementById('class-link').value = item.link;
+    document.getElementById('class-name').value = item.name || '';
+    document.getElementById('class-link').value = item.link || '';
     setTimeFrom24(item.time12 || item.time);
     document.getElementById('class-duration').value = item.duration || 60;
     document.getElementById('class-enabled').checked = item.enabled !== false;
 
-    const itemDays = (Array.isArray(item.days) ? item.days : [item.days]).map((d) => d.toLowerCase());
+    // Accurately map days (handling full names e.g. "monday", "wednesday", and abbreviations "mon", "wed")
+    const itemDays = (Array.isArray(item.days) ? item.days : [item.days]).map((d) =>
+      String(d).toLowerCase().trim().slice(0, 3)
+    );
+    const isAll = itemDays.includes('all') || itemDays.includes('*');
     document.querySelectorAll('input[name="days"]').forEach((cb) => {
-      cb.checked = itemDays.includes(cb.value) || itemDays.includes('all') || itemDays.includes('*');
+      const cbVal = cb.value.toLowerCase().slice(0, 3);
+      cb.checked = isAll || itemDays.includes(cbVal);
     });
 
     classModal.style.display = 'flex';
+    const modalWin = document.querySelector('.modal-window');
+    if (modalWin) modalWin.scrollTop = 0;
   };
 
   window.copyLink = function (link) {

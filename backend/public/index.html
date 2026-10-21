@@ -440,8 +440,16 @@
   <div id="class-modal" class="modal-backdrop" style="display: none;">
     <div class="modal-window">
       <div class="modal-header">
-        <h3 id="modal-title">Add Scheduled Class</h3>
-        <button id="btn-close-modal" class="btn-close">&times;</button>
+        <div class="modal-title-wrapper">
+          <div class="modal-title-icon" id="modal-title-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </div>
+          <div>
+            <h3 id="modal-title">Edit Scheduled Class</h3>
+            <span id="modal-subtitle" class="modal-subtitle">Configure class timing, Meet link, and weekly schedule</span>
+          </div>
+        </div>
+        <button id="btn-close-modal" class="btn-close" title="Close window">&times;</button>
       </div>
 
       <form id="class-form">
@@ -564,7 +572,10 @@
 
         <div class="modal-footer">
           <button type="button" id="btn-cancel-modal" class="btn-secondary">Cancel</button>
-          <button type="submit" id="btn-save-class" class="btn-primary">Save Class</button>
+          <button type="submit" id="btn-save-class" class="btn-primary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span id="btn-save-class-text">Save Changes</span>
+          </button>
         </div>
       </form>
     </div>
