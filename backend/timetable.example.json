@@ -1,0 +1,20 @@
+[
+  {
+    "id": "class-example-1",
+    "name": "Distributed Systems",
+    "link": "https://meet.google.com/abc-defg-hij",
+    "days": ["mon", "wed", "fri"],
+    "time": "10:00",
+    "duration": 60,
+    "enabled": true
+  },
+  {
+    "id": "class-example-2",
+    "name": "Machine Learning Lab",
+    "link": "https://meet.google.com/xyz-uvwx-rst",
+    "days": ["tue", "thu"],
+    "time": "14:00",
+    "duration": 90,
+    "enabled": true
+  }
+]

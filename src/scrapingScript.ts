@@ -1120,6 +1120,34 @@ function init() {
   console.log('[MeetContentScript] Content script initialized.');
 }
 
+// --- Bot Automation & Hands-Free Recording Triggers ---
+// Allows Node.js bots (Puppeteer/Playwright) to trigger recording hands-free via:
+// 1) window.postMessage({ type: 'START_RECORDING_BOT' }, '*')
+// 2) window.dispatchEvent(new CustomEvent('START_RECORDING_BOT'))
+window.addEventListener('message', (event) => {
+  if (event.data?.type === 'START_RECORDING_BOT') {
+    chrome.runtime.sendMessage({ type: 'START_RECORDING' }, (res) => {
+      console.log('[MeetContentScript] Bot START_RECORDING response:', res);
+    });
+  } else if (event.data?.type === 'STOP_RECORDING_BOT') {
+    chrome.runtime.sendMessage({ type: 'STOP_RECORDING' }, (res) => {
+      console.log('[MeetContentScript] Bot STOP_RECORDING response:', res);
+    });
+  }
+});
+
+window.addEventListener('START_RECORDING_BOT', () => {
+  chrome.runtime.sendMessage({ type: 'START_RECORDING' }, (res) => {
+    console.log('[MeetContentScript] Bot START_RECORDING response:', res);
+  });
+});
+
+window.addEventListener('STOP_RECORDING_BOT', () => {
+  chrome.runtime.sendMessage({ type: 'STOP_RECORDING' }, (res) => {
+    console.log('[MeetContentScript] Bot STOP_RECORDING response:', res);
+  });
+});
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {

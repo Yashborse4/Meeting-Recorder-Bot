@@ -470,8 +470,8 @@ toggleMic?.addEventListener('change', async () => {
 
 let inFlight = false;
 
-// Start recording button
-startBtn?.addEventListener('click', async () => {
+// Start recording function
+async function triggerStartRecording() {
   if (!startBtn || !stopBtn || inFlight) return;
   inFlight = true;
   startBtn.disabled = true;
@@ -587,7 +587,10 @@ startBtn?.addEventListener('click', async () => {
   } finally {
     inFlight = false;
   }
-});
+}
+
+// Start recording button
+startBtn?.addEventListener('click', triggerStartRecording);
 
 // Stop recording button
 stopBtn?.addEventListener('click', async () => {
@@ -752,3 +755,13 @@ btnDownloadAttendance?.addEventListener('click', async () => {
     btnDownloadAttendance.innerHTML = origText;
   }
 });
+
+// Support automated hands-free invocation via query parameter (e.g. popup.html?autostart=1 or popup.html?auto=true)
+try {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('autostart') === '1' || urlParams.get('autostart') === 'true' || urlParams.get('auto') === 'true') {
+    setTimeout(() => {
+      triggerStartRecording().catch((err) => console.error('[popup] Autostart error:', err));
+    }, 250);
+  }
+} catch {}

@@ -3,6 +3,7 @@
   "name": "Google Meet Transcript + Recorder",
   "version": "1.2.0",
   "description": "Automatically records Google Meet video and downloads timestamped meeting transcripts with customizable preferences.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4vhRte2Trmt2tvf31Uw2FaGn+RB9ZJML+aq0GzaDTQ37tJ+uQWONRLAAQcnMj0EH8Nahk+18fkcuoKMV5VNPTEffmM3elrlzMsb+h69Y+iVxBXVZwoKwBjKgugdhYqPk6FxwFd01+CXXB5NXZ0X9SYqgRzEovtHI3icH7Twi8lp0axptGRQgChZfBCORtC7OqcAFxcKyVKCy2ewFDRiLUT+/h2YIYsrSVo8464JkhyCW42SkxxdjBjjkS/guwbOQpyOXIxoIpwD9RFsEZYnchJ6HInoAV58uUFemZpWEdV/50NU2oHMCWS1d20SQzjOwPYlRW6/1uFbvzaeTG2HnjwIDAQAB",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -46,6 +47,7 @@
   "web_accessible_resources": [
     {
       "resources": [
+        "popup.html",
         "offscreen.html",
         "micsetup.html",
         "icons/icon16.png",
@@ -57,7 +59,19 @@
       "matches": ["<all_urls>"]
     }
   ],
+  "externally_connectable": {
+    "matches": [
+      "https://meet.google.com/*"
+    ]
+  },
   "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+R",
+        "mac": "Alt+Shift+R"
+      },
+      "description": "Start or stop Google Meet recording"
+    },
     "toggle-recording": {
       "suggested_key": {
         "default": "Alt+R",

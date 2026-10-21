@@ -1,0 +1,15 @@
+{
+  "storagePath": "./backend/recordings",
+  "botName": "Meeting Recorder Bot",
+  "muteMicOnJoin": true,
+  "turnOffCameraOnJoin": true,
+  "autoLeave": {
+    "enabled": true,
+    "minParticipants": 2,
+    "gracePeriodSec": 60,
+    "onHostExit": true,
+    "maxDurationEnforced": true,
+    "onSilence": false,
+    "silenceMinutes": 10
+  }
+}

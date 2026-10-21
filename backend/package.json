@@ -1,0 +1,28 @@
+{
+  "name": "google-meet-recorder-backend",
+  "version": "1.0.0",
+  "description": "Backend bot controller for hands-free automated Google Meet recording",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dashboard": "node src/server.js",
+    "schedule": "node src/scheduler.js",
+    "schedule:list": "node src/manageTimetable.js list",
+    "schedule:add": "node src/manageTimetable.js add",
+    "test:bot": "node src/index.js https://meet.google.com/new 1"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "puppeteer": "^24.4.0"
+  },
+  "keywords": [
+    "google-meet",
+    "puppeteer",
+    "bot",
+    "recording",
+    "timetable",
+    "scheduler"
+  ],
+  "author": "",
+  "license": "ISC"
+}

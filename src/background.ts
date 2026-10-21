@@ -553,7 +553,7 @@ async function hydrateStateIfNeeded(): Promise<void> {
 }
 
 async function getStreamIdForTab(tabId: number, preferDesktop: boolean = false): Promise<{ streamId: string, source: 'tab' | 'desktop' }> {
-  // 1. Try direct tabCapture.getMediaStreamId (ONLY valid when initiated via extension gesture like popup or command)
+  // 1. Try direct tabCapture.getMediaStreamId first (succeeds if user gesture is present OR if extension is allowlisted)
   if (!preferDesktop) {
     try {
       const directId = await new Promise<string>((resolve, reject) => {
@@ -567,7 +567,7 @@ async function getStreamIdForTab(tabId: number, preferDesktop: boolean = false):
       });
       return { streamId: directId, source: 'tab' };
     } catch (err: any) {
-      bglog('tabCapture.getMediaStreamId not invoked via extension gesture; falling back to desktopCapture:', err?.message || err);
+      bglog('tabCapture.getMediaStreamId not invoked via gesture or allowlist; falling back to desktopCapture:', err?.message || err);
     }
   }
 
@@ -588,9 +588,9 @@ async function getStreamIdForTab(tabId: number, preferDesktop: boolean = false):
   });
 }
 
-// Keyboard shortcut (Alt+R) invokes activeTab directly
+// Keyboard shortcuts (Alt+R, Alt+Shift+R, or command trigger)
 chrome.commands?.onCommand.addListener(async (command) => {
-  if (command === 'toggle-recording') {
+  if (command === 'toggle-recording' || command === 'toggle_recording' || command === '_execute_action') {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id || !tab.url?.includes('meet.google.com')) return;
     const tabId = tab.id;
@@ -990,11 +990,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
+// 4. Support external messages from Node.js automation bots or allowed origins
+chrome.runtime.onMessageExternal?.addListener((msg, sender, sendResponse) => {
+  if (msg?.type === 'START_RECORDING') {
+    handleStartRecording(msg, sender, sendResponse);
+    return true;
+  }
+  if (msg?.type === 'STOP_RECORDING' || msg?.type === 'FINALIZE_RECORDING') {
+    handleStopRecording(msg, sendResponse);
+    return true;
+  }
+  if (msg?.type === 'GET_RECORDING_STATUS') {
+    sendResponse({
+      recording: lastKnownRecording,
+      paused: lastKnownPaused,
+      startedAt: activeRecordingStartTime,
+      tabId: activeRecordingTabId,
+    });
+    return false;
+  }
+  return false;
+});
+
 async function handleStartRecording(msg: any, sender: chrome.runtime.MessageSender, sendResponse: (res: any) => void) {
   try {
-    const targetTabId = typeof msg.tabId === 'number' ? msg.tabId : sender.tab?.id;
+    let targetTabId = typeof msg.tabId === 'number' ? msg.tabId : sender.tab?.id;
     if (typeof targetTabId !== 'number') {
-      sendResponse({ ok: false, error: 'Target tabId not provided' });
+      const meetTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      const activeMeet = meetTabs.find((t) => t.url?.includes('meet.google.com')) || meetTabs[0];
+      if (activeMeet?.id) {
+        targetTabId = activeMeet.id;
+      } else {
+        const anyMeet = await chrome.tabs.query({ url: 'https://meet.google.com/*' });
+        if (anyMeet[0]?.id) {
+          targetTabId = anyMeet[0].id;
+        }
+      }
+    }
+
+    if (typeof targetTabId !== 'number') {
+      sendResponse({ ok: false, error: 'Target tabId not provided and no Google Meet tab found' });
       return;
     }
 
@@ -1030,8 +1065,8 @@ async function handleStartRecording(msg: any, sender: chrome.runtime.MessageSend
       let source = (msg.source as 'tab' | 'desktop') || 'tab';
 
       if (!streamId) {
-        const isFromInPage = typeof sender.tab?.id === 'number';
-        const captureInfo = await getStreamIdForTab(targetTabId, isFromInPage);
+        // Try tabCapture first (succeeds hands-free with allowlist flags or shortcuts); fallback to desktopCapture
+        const captureInfo = await getStreamIdForTab(targetTabId, false);
         streamId = captureInfo.streamId;
         source = captureInfo.source;
       }

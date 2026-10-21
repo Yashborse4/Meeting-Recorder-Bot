@@ -3,7 +3,13 @@
     "version": "1.0.0",
     "scripts": {
         "build": "webpack --mode=production",
-        "watch": "webpack --watch"
+        "build:ext": "webpack --mode=production",
+        "watch": "webpack --watch",
+        "dashboard": "node backend/src/server.js",
+        "start:bot": "node backend/src/index.js",
+        "schedule": "node backend/src/scheduler.js",
+        "schedule:list": "node backend/src/manageTimetable.js list",
+        "schedule:add": "node backend/src/manageTimetable.js add"
     },
     "devDependencies": {
         "@types/chrome": "^0.0.326",
