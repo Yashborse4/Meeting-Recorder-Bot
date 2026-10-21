@@ -19,6 +19,7 @@ const DEFAULT_SETTINGS = {
   rejoinRetries: 3, // Auto retry up to 3 times to rejoin class if disconnected or join fails
   rejoinDelaySec: 10, // Wait 10 seconds between retry attempts
   autoRejoinOnDisconnect: true, // Auto retry rejoins if call drops unexpectedly
+  maxLobbyWaitMin: 15, // Wait up to 15 minutes for host to let bot into class
   autoLeave: {
     enabled: true,
     minParticipants: 2,

@@ -263,6 +263,14 @@ body {
   box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
   animation: pulse-border 1.5s infinite alternate;
 }
+.live-status-tag.waiting-host {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+  font-weight: 800;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.6);
+  animation: pulse-border 1.2s infinite alternate;
+}
 @keyframes pulse-border {
   0% { transform: scale(0.98); opacity: 0.9; }
   100% { transform: scale(1.02); opacity: 1; }

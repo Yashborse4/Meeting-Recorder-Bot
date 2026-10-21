@@ -253,13 +253,20 @@ function getStatus() {
 
   let activeInfo = null;
   if (activeRecordingState) {
-    const elapsed = Date.now() - activeRecordingState.startedAt;
+    const elapsed = activeRecordingState.joinedAt
+      ? Date.now() - activeRecordingState.joinedAt
+      : Date.now() - activeRecordingState.startedAt;
     const remainingMs = Math.max(0, activeRecordingState.durationMs - elapsed);
+    const elapsedMinutes = Math.floor(elapsed / 60000);
+    const elapsedSeconds = Math.floor((elapsed % 60000) / 1000);
+
     activeInfo = {
       ...activeRecordingState,
       elapsedMs: elapsed,
       remainingMs,
-      elapsedStr: `${Math.floor(elapsed / 60000)}m ${Math.floor((elapsed % 60000) / 1000)}s`,
+      elapsedStr: activeRecordingState.joinedAt
+        ? `${elapsedMinutes}m ${elapsedSeconds}s`
+        : 'Waiting for host...',
     };
   }
 
@@ -290,6 +297,7 @@ async function startManualSession(link, durationMinutes = 60, name = 'Manual Rec
     name,
     link,
     startedAt: Date.now(),
+    joinedAt: null,
     durationMinutes,
     durationMs,
     attempt: 1,
@@ -313,13 +321,21 @@ async function startManualSession(link, durationMinutes = 60, name = 'Manual Rec
       muteMicOnJoin: settings.muteMicOnJoin !== false,
       turnOffCameraOnJoin: settings.turnOffCameraOnJoin !== false,
       autoLeave: settings.autoLeave,
+      maxLobbyWaitMin: settings.maxLobbyWaitMin || 15,
     });
     activeBotInstance = bot;
 
     try {
       await bot.launch();
-      await bot.joinMeeting(link);
-      await new Promise((r) => setTimeout(r, 3000));
+
+      const onStatusUpdate = (statusText) => {
+        if (activeRecordingState) {
+          activeRecordingState.status = statusText;
+        }
+      };
+
+      // Waits for host to admit bot into the class before returning
+      await bot.joinMeeting(link, onStatusUpdate);
 
       const onAutoLeave = async (reason) => {
         console.log(`[Scheduler] Auto-leave triggered (${reason}) for "${name}". Finalizing session...`);
@@ -335,12 +351,14 @@ async function startManualSession(link, durationMinutes = 60, name = 'Manual Rec
         }
       };
 
+      // Recording strictly starts only AFTER host admits the bot into class
       await bot.startRecording(durationMinutes, onAutoLeave, onUnexpectedDisconnect);
 
+      activeRecordingState.joinedAt = Date.now();
       activeRecordingState.status = 'Recording live';
-      console.log(`[Scheduler] Successfully joined and recording: "${name}" (Attempt ${attempt}/${maxRetries})`);
+      console.log(`[Scheduler] Host let bot in! Recording live for: "${name}" (Attempt ${attempt}/${maxRetries})`);
 
-      // Set auto-stop timer
+      // Set auto-stop timer starting from actual joined time
       if (activeStopTimer) clearTimeout(activeStopTimer);
       activeStopTimer = setTimeout(async () => {
         if (activeBotInstance === bot) {
@@ -389,7 +407,7 @@ async function handleMidSessionRejoin(link, durationMinutes, name) {
     activeBotInstance = null;
   }
 
-  const elapsed = Date.now() - (activeRecordingState.startedAt || Date.now());
+  const elapsed = Date.now() - (activeRecordingState.joinedAt || activeRecordingState.startedAt || Date.now());
   const remainingMinutes = Math.max(5, Math.ceil((activeRecordingState.durationMs - elapsed) / 60000));
 
   for (let retry = 1; retry <= maxRetries; retry++) {
@@ -402,12 +420,16 @@ async function handleMidSessionRejoin(link, durationMinutes, name) {
         muteMicOnJoin: settings.muteMicOnJoin !== false,
         turnOffCameraOnJoin: settings.turnOffCameraOnJoin !== false,
         autoLeave: settings.autoLeave,
+        maxLobbyWaitMin: settings.maxLobbyWaitMin || 15,
       });
       activeBotInstance = bot;
 
       await bot.launch();
-      await bot.joinMeeting(link);
-      await new Promise((r) => setTimeout(r, 3000));
+
+      const onStatusUpdate = (statusText) => {
+        if (activeRecordingState) activeRecordingState.status = statusText;
+      };
+      await bot.joinMeeting(link, onStatusUpdate);
 
       await bot.startRecording(
         remainingMinutes,
@@ -415,6 +437,7 @@ async function handleMidSessionRejoin(link, durationMinutes, name) {
         () => { handleMidSessionRejoin(link, remainingMinutes, name); }
       );
 
+      activeRecordingState.joinedAt = Date.now();
       activeRecordingState.status = 'Recording live';
       console.log(`[Scheduler] Successfully reconnected to "${name}"!`);
       isMidSessionRejoining = false;

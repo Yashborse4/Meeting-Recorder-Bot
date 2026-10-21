@@ -131,13 +131,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const liveSessionStatus = document.getElementById('live-session-status');
 
         if (data.activeRecording.status) {
+          const isWaitingHost = /waiting for host|asking to join/i.test(data.activeRecording.status);
+          const isRetry = /rejoin|retry|fail|attempt/i.test(data.activeRecording.status);
+
           if (liveBadgeStatus) {
-            liveBadgeStatus.textContent = data.activeRecording.status.toUpperCase();
+            if (isWaitingHost) {
+              liveBadgeStatus.textContent = 'WAITING FOR HOST TO LET YOU IN';
+            } else if (isRetry) {
+              liveBadgeStatus.textContent = data.activeRecording.status.toUpperCase();
+            } else {
+              liveBadgeStatus.textContent = 'RECORDING LIVE';
+            }
           }
           if (liveSessionStatus) {
             liveSessionStatus.textContent = data.activeRecording.status;
             liveSessionStatus.style.display = 'inline-block';
-            if (/rejoin|retry|fail|attempt/i.test(data.activeRecording.status)) {
+            if (isWaitingHost) {
+              liveSessionStatus.className = 'live-status-tag waiting-host';
+            } else if (isRetry) {
               liveSessionStatus.className = 'live-status-tag retry';
             } else {
               liveSessionStatus.className = 'live-status-tag';
@@ -869,6 +880,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (rejoinDelayEl) rejoinDelayEl.value = settings.rejoinDelaySec !== undefined ? settings.rejoinDelaySec : 10;
       const autoRejoinEl = document.getElementById('setting-auto-rejoin-disconnect');
       if (autoRejoinEl) autoRejoinEl.checked = settings.autoRejoinOnDisconnect !== false;
+      const maxLobbyWaitEl = document.getElementById('setting-max-lobby-wait');
+      if (maxLobbyWaitEl) maxLobbyWaitEl.value = settings.maxLobbyWaitMin !== undefined ? settings.maxLobbyWaitMin : 15;
     } catch {}
   }
 
@@ -975,6 +988,7 @@ document.addEventListener('DOMContentLoaded', () => {
       rejoinRetries: parseInt(document.getElementById('setting-rejoin-retries').value, 10),
       rejoinDelaySec: parseInt(document.getElementById('setting-rejoin-delay').value, 10),
       autoRejoinOnDisconnect: document.getElementById('setting-auto-rejoin-disconnect').checked,
+      maxLobbyWaitMin: parseInt(document.getElementById('setting-max-lobby-wait').value, 10),
     };
 
     try {

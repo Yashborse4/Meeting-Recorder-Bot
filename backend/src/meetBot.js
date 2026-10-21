@@ -38,7 +38,147 @@ class MeetRecorderBot {
     this.downloadDir = downloadDir;
   }
 
-  async joinMeeting(meetingUrl) {
+  async checkMeetingState() {
+    if (!this.page || this.page.isClosed()) {
+      return { state: 'CLOSED', message: 'Browser page is closed' };
+    }
+
+    return await this.page.evaluate(() => {
+      const text = document.body ? document.body.innerText || '' : '';
+      const textLower = text.toLowerCase();
+
+      // 1. Check for host rejection / denial
+      if (
+        text.includes('Someone denied your request to join') ||
+        text.includes("You can't join this video call") ||
+        text.includes("You can’t join this video call") ||
+        text.includes('Your request to join was denied') ||
+        text.includes('Unable to join the call')
+      ) {
+        return { state: 'DENIED', message: 'Host denied request to join the class' };
+      }
+
+      // 2. Check for invalid meeting link or fatal connection errors
+      if (
+        text.includes('This meeting link is invalid') ||
+        text.includes('Invalid meeting code') ||
+        text.includes("Couldn't connect to the meeting")
+      ) {
+        return { state: 'ERROR', message: 'Invalid or inaccessible meeting link' };
+      }
+
+      // 3. Check if inside the live meeting room
+      const hasLeaveBtn = !!document.querySelector(
+        'button[aria-label*="leave call" i], button[aria-label*="leave meeting" i], button[aria-label*="end call" i]'
+      );
+      const hasPeopleBtn = !!document.querySelector(
+        'button[aria-label*="everyone" i], button[aria-label*="people" i], button[aria-label*="show everyone" i]'
+      );
+      const hasChatBtn = !!document.querySelector(
+        'button[aria-label*="chat with everyone" i], button[aria-label*="in-call messages" i]'
+      );
+      const hasCallControls = !!document.querySelector(
+        '[data-unhovered-bottom-bar], div[role="region"][aria-label*="call controls" i], div[role="region"][aria-label*="meeting controls" i]'
+      );
+      const participantTiles = document.querySelectorAll('[data-participant-id], [data-requested-participant-id]');
+
+      if (hasLeaveBtn || (hasCallControls && (hasPeopleBtn || hasChatBtn || participantTiles.length > 0))) {
+        return { state: 'IN_MEETING', message: 'Inside meeting room' };
+      }
+
+      // 4. Check if waiting for host approval
+      if (
+        textLower.includes('asking to join') ||
+        textLower.includes("you'll join the call when someone lets you in") ||
+        textLower.includes("you’ll join the call when someone lets you in") ||
+        textLower.includes('someone will let you in soon') ||
+        textLower.includes('waiting for host to admit you') ||
+        textLower.includes('waiting for host')
+      ) {
+        return { state: 'WAITING_FOR_HOST', message: 'Waiting for host to admit you to the class...' };
+      }
+
+      // 5. In lobby (not yet joined)
+      return { state: 'LOBBY', message: 'In Google Meet pre-join lobby' };
+    });
+  }
+
+  async waitForAdmission(maxWaitMinutes = 15, onStatusUpdate = null) {
+    const maxWaitMs = maxWaitMinutes * 60 * 1000;
+    const startWait = Date.now();
+    let lastLoggedState = '';
+
+    console.log(`[Backend/MeetBot] Waiting for host admission (timeout: ${maxWaitMinutes}m)...`);
+
+    while (Date.now() - startWait < maxWaitMs) {
+      if (!this.page || this.page.isClosed()) {
+        throw new Error('Meeting page was closed while waiting to join.');
+      }
+
+      const { state, message } = await this.checkMeetingState();
+
+      if (state === 'IN_MEETING') {
+        console.log('[Backend/MeetBot] 🎓 Successfully admitted into the class by the host!');
+        if (typeof onStatusUpdate === 'function') {
+          onStatusUpdate('Admitted by host. Preparing recording...');
+        }
+        return true;
+      }
+
+      if (state === 'DENIED') {
+        console.error('[Backend/MeetBot] Host denied admission to the meeting.');
+        if (typeof onStatusUpdate === 'function') {
+          onStatusUpdate('Host denied entry to the class');
+        }
+        throw new Error('Host denied request to join the class.');
+      }
+
+      if (state === 'ERROR') {
+        throw new Error(message || 'Google Meet connection error');
+      }
+
+      if (state === 'WAITING_FOR_HOST') {
+        if (lastLoggedState !== 'WAITING_FOR_HOST') {
+          console.log('[Backend/MeetBot] ⏳ Request sent. Waiting for host to let you in...');
+          lastLoggedState = 'WAITING_FOR_HOST';
+        }
+        const waitSec = Math.floor((Date.now() - startWait) / 1000);
+        const waitMins = Math.floor(waitSec / 60);
+        const waitRemSec = waitSec % 60;
+        const waitStr = `Waiting for host to let you in (${waitMins}m ${waitRemSec}s)...`;
+        if (typeof onStatusUpdate === 'function') {
+          onStatusUpdate(waitStr);
+        }
+      } else if (state === 'LOBBY') {
+        // If still in lobby, try clicking Join / Ask to join / Rejoin again if visible
+        try {
+          await this.page.evaluate(() => {
+            const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
+            for (const btn of buttons) {
+              const text = (btn.innerText || '').trim();
+              const aria = (btn.getAttribute('aria-label') || '').trim();
+              const combined = `${text} ${aria}`.toLowerCase();
+              if (
+                /^(join now|ask to join|join|rejoin)$/i.test(text) ||
+                combined.includes('join now') ||
+                combined.includes('ask to join') ||
+                combined.includes('rejoin')
+              ) {
+                btn.click();
+                break;
+              }
+            }
+          });
+        } catch {}
+      }
+
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+
+    throw new Error(`Timed out waiting ${maxWaitMinutes}m for host to admit you into the class.`);
+  }
+
+  async joinMeeting(meetingUrl, onStatusUpdate = null) {
     if (!this.page) throw new Error('Bot not launched. Call launch() first.');
 
     console.log(`[Backend/MeetBot] Navigating to: ${meetingUrl}`);
@@ -83,35 +223,22 @@ class MeetRecorderBot {
 
     // Poll for Join / Ask to join / Rejoin button
     console.log('[Backend/MeetBot] Searching for Join/Rejoin button...');
-    let joined = false;
-    const maxPollAttempts = 10;
+    const maxPollAttempts = 8;
     for (let i = 0; i < maxPollAttempts; i++) {
-      // 1. Check if an error message is visible
-      const errorMsg = await this.page.evaluate(() => {
-        const text = document.body ? document.body.innerText || '' : '';
-        if (text.includes("You can't join this video call")) return "You can't join this video call";
-        if (text.includes("Couldn't connect to the meeting")) return "Couldn't connect to the meeting";
-        if (text.includes("This meeting link is invalid") || text.includes("Invalid meeting code")) return "Invalid meeting link";
-        return null;
-      });
-
-      if (errorMsg) {
-        throw new Error(`Google Meet lobby error: ${errorMsg}`);
-      }
-
-      // 2. Check if already in meeting (leave call button present)
-      const inCall = await this.page.evaluate(() => {
-        const leaveBtn = document.querySelector('button[aria-label*="leave call" i], button[aria-label*="leave meeting" i]');
-        return !!leaveBtn;
-      });
-
-      if (inCall) {
+      const { state, message } = await this.checkMeetingState();
+      if (state === 'IN_MEETING') {
         console.log('[Backend/MeetBot] Already entered meeting room.');
-        joined = true;
         break;
       }
+      if (state === 'WAITING_FOR_HOST') {
+        console.log('[Backend/MeetBot] In waiting lobby for host.');
+        break;
+      }
+      if (state === 'DENIED' || state === 'ERROR') {
+        throw new Error(message);
+      }
 
-      // 3. Find and click Join / Rejoin / Ask to join button
+      // Find and click Join / Rejoin / Ask to join button
       const clicked = await this.page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
         for (const btn of buttons) {
@@ -119,11 +246,13 @@ class MeetRecorderBot {
           const aria = (btn.getAttribute('aria-label') || '').trim();
           const combined = `${text} ${aria}`.toLowerCase();
 
-          if (/^(join now|ask to join|join|rejoin)$/i.test(text) ||
-              combined.includes('join now') ||
-              combined.includes('ask to join') ||
-              combined.includes('rejoin') ||
-              combined === 'join') {
+          if (
+            /^(join now|ask to join|join|rejoin)$/i.test(text) ||
+            combined.includes('join now') ||
+            combined.includes('ask to join') ||
+            combined.includes('rejoin') ||
+            combined === 'join'
+          ) {
             btn.click();
             return text || aria || 'Join';
           }
@@ -133,29 +262,38 @@ class MeetRecorderBot {
 
       if (clicked) {
         console.log(`[Backend/MeetBot] Clicked button: "${clicked}"`);
-        joined = true;
         break;
       }
 
       await new Promise((r) => setTimeout(r, 1500));
     }
 
-    if (!joined) {
-      console.warn('[Backend/MeetBot] Could not find explicit Join button, checking if already in waiting lobby...');
-    }
+    // Wait for the Host to admit the bot into the meeting before returning
+    const settings = getSettings();
+    const maxLobbyWaitMin = this.options.maxLobbyWaitMin || settings.maxLobbyWaitMin || 15;
+    await this.waitForAdmission(maxLobbyWaitMin, onStatusUpdate);
 
-    await new Promise((r) => setTimeout(r, 4000));
+    await new Promise((r) => setTimeout(r, 2000));
 
     // Turn on live captions in Meet so the content script can harvest transcripts
     try {
       await this.page.keyboard.press('KeyC');
-      console.log('[Backend/MeetBot] Turned on captions (KeyC).');
+      console.log('[Backend/MeetBot] Turned on captions (KeyC) after admission.');
     } catch {}
   }
 
   async startRecording(durationMinutes = 60, onAutoLeave = null, onUnexpectedDisconnect = null) {
     if (!this.page) throw new Error('Bot not active.');
-    console.log('[Backend/MeetBot] Dispatching START_RECORDING_BOT event hands-free...');
+
+    // Guarantee that recording strictly starts only after host admission
+    const { state } = await this.checkMeetingState();
+    if (state !== 'IN_MEETING') {
+      console.warn(`[Backend/MeetBot] startRecording called but state is "${state}". Waiting for host admission...`);
+      const settings = getSettings();
+      await this.waitForAdmission(this.options.maxLobbyWaitMin || settings.maxLobbyWaitMin || 15);
+    }
+
+    console.log('[Backend/MeetBot] Inside meeting room confirmed! Starting recording now...');
 
     // In-page DOM event (zero user interaction required)
     await this.page.evaluate(() => {
@@ -163,7 +301,7 @@ class MeetRecorderBot {
     });
 
     this.isRecording = true;
-    console.log('[Backend/MeetBot] Recording successfully initiated!');
+    console.log('[Backend/MeetBot] Recording successfully initiated inside the live class!');
 
     // Start auto-leave and disconnect watcher
     this.startAutoLeaveWatcher(durationMinutes, onAutoLeave, onUnexpectedDisconnect);
