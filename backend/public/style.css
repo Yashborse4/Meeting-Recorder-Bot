@@ -1,38 +1,48 @@
 /* ==========================================================================
-   MeetRecord Pro - Premium OLED Black & Dark Theme
+   MeetRecord Pro - Ultra-Modern Black & White (Monochrome) Design System
    ========================================================================== */
 
 :root {
-  --bg-black: #08090d;
-  --bg-card: #0f1118;
-  --bg-card-hover: #151822;
-  --bg-input: #12151e;
-  --border-subtle: rgba(255, 255, 255, 0.07);
-  --border-hover: rgba(255, 255, 255, 0.16);
-  --border-active: rgba(99, 102, 241, 0.4);
+  /* Surface Colors (True OLED Black & Grayscale) */
+  --bg-black: #000000;
+  --bg-card: #0c0c0e;
+  --bg-card-hover: #141416;
+  --bg-input: #08080a;
+  --bg-elevated: #18181b;
 
-  --accent-primary: #6366f1;
-  --accent-primary-hover: #4f46e5;
-  --accent-cyan: #06b6d4;
-  --accent-emerald: #10b981;
-  --accent-rose: #f43f5e;
-  --accent-amber: #f59e0b;
+  /* Monochromatic Borders */
+  --border-subtle: rgba(255, 255, 255, 0.10);
+  --border-hover: rgba(255, 255, 255, 0.24);
+  --border-active: #ffffff;
+  --border-strong: rgba(255, 255, 255, 0.40);
 
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --text-dim: #64748b;
+  /* Primary Monochrome Tokens */
+  --accent-primary: #ffffff;
+  --accent-primary-hover: #e4e4e7;
+  --accent-primary-text: #000000;
+  --accent-secondary: #27272a;
+  --accent-muted: #52525b;
 
+  /* Typography Colors */
+  --text-main: #ffffff;
+  --text-muted: #a1a1aa;
+  --text-dim: #71717a;
+  --text-inverse: #000000;
+
+  /* Fonts */
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
 
+  /* Border Radii */
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 20px;
   --radius-pill: 9999px;
 
-  --shadow-subtle: 0 4px 20px rgba(0, 0, 0, 0.4);
-  --shadow-glow: 0 0 25px rgba(99, 102, 241, 0.15);
-  --shadow-live: 0 0 30px rgba(244, 63, 94, 0.25);
+  /* Monochromatic Shadows */
+  --shadow-subtle: 0 4px 20px rgba(0, 0, 0, 0.7);
+  --shadow-glow: 0 0 25px rgba(255, 255, 255, 0.08);
+  --shadow-live: 0 0 30px rgba(255, 255, 255, 0.15);
 }
 
 * {
@@ -52,37 +62,39 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Ambient Glow Backgrounds */
+/* Ambient Subtle Monochromatic Lighting */
 .ambient-glow {
   position: fixed;
   border-radius: 50%;
   pointer-events: none;
   filter: blur(140px);
   z-index: 0;
-  opacity: 0.18;
+  opacity: 0.12;
 }
 .glow-1 {
-  width: 500px;
-  height: 500px;
-  top: -100px;
-  left: 10%;
-  background: radial-gradient(circle, var(--accent-primary) 0%, transparent 70%);
+  width: 550px;
+  height: 550px;
+  top: -120px;
+  left: 15%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.25) 0%, transparent 70%);
 }
 .glow-2 {
-  width: 450px;
-  height: 450px;
-  top: 300px;
-  right: 5%;
-  background: radial-gradient(circle, var(--accent-cyan) 0%, transparent 70%);
+  width: 480px;
+  height: 480px;
+  top: 350px;
+  right: 8%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.18) 0%, transparent 70%);
 }
 
-/* Navbar */
+/* ==========================================================================
+   Navbar
+   ========================================================================== */
 .navbar {
   position: sticky;
   top: 0;
-  background: rgba(8, 9, 13, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border-subtle);
   z-index: 100;
   padding: 16px 0;
@@ -104,8 +116,8 @@ body {
   width: 38px;
   height: 38px;
   border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(6, 182, 212, 0.1) 100%);
-  border: 1px solid rgba(99, 102, 241, 0.35);
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.25);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -114,21 +126,22 @@ body {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent-rose);
-  box-shadow: 0 0 12px var(--accent-rose);
+  background: #ffffff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.85);
   animation: pulse-dot 2s infinite ease-in-out;
 }
 @keyframes pulse-dot {
   0%, 100% { transform: scale(0.9); opacity: 0.8; }
-  50% { transform: scale(1.15); opacity: 1; box-shadow: 0 0 16px var(--accent-rose); }
+  50% { transform: scale(1.15); opacity: 1; box-shadow: 0 0 16px #ffffff; }
 }
 .brand-text h1 {
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+  color: #ffffff;
 }
 .accent-text {
-  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-cyan) 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #a1a1aa 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -152,33 +165,39 @@ body {
   border-radius: var(--radius-pill);
   font-size: 0.8rem;
   font-weight: 600;
-  background: rgba(16, 185, 129, 0.08);
-  border: 1px solid rgba(16, 185, 129, 0.25);
-  color: var(--accent-emerald);
+  background: #0a0a0c;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
 }
 .status-pill.paused {
-  background: rgba(245, 158, 11, 0.08);
-  border-color: rgba(245, 158, 11, 0.25);
-  color: var(--accent-amber);
+  background: #0a0a0c;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-muted);
 }
 .status-indicator {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 8px currentColor;
+  background: #ffffff;
+  box-shadow: 0 0 8px #ffffff;
+}
+.status-pill.paused .status-indicator {
+  background: var(--text-dim);
+  box-shadow: none;
 }
 
-/* Live Recording Banner */
+/* ==========================================================================
+   Live Recording Banner
+   ========================================================================== */
 .live-banner {
-  background: linear-gradient(90deg, rgba(244, 63, 94, 0.15) 0%, rgba(15, 17, 24, 0.95) 100%);
-  border-bottom: 1px solid rgba(244, 63, 94, 0.35);
+  background: #000000;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
   padding: 12px 0;
   animation: banner-glow 3s infinite alternate;
 }
 @keyframes banner-glow {
-  0% { box-shadow: inset 0 0 20px rgba(244, 63, 94, 0.1); }
-  100% { box-shadow: inset 0 0 40px rgba(244, 63, 94, 0.25); }
+  0% { box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.05); }
+  100% { box-shadow: inset 0 0 40px rgba(255, 255, 255, 0.12); }
 }
 .live-banner-content {
   max-width: 1200px;
@@ -192,10 +211,10 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--accent-rose);
-  color: #fff;
+  background: #ffffff;
+  color: #000000;
   font-size: 0.75rem;
-  font-weight: 700;
+  font-weight: 800;
   padding: 4px 10px;
   border-radius: var(--radius-pill);
   letter-spacing: 0.05em;
@@ -204,7 +223,7 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #fff;
+  background: #000000;
   animation: pulse-dot 1s infinite;
 }
 .live-info {
@@ -215,18 +234,21 @@ body {
 .live-title {
   font-weight: 600;
   font-size: 0.95rem;
+  color: #ffffff;
 }
 .live-time {
   font-family: var(--font-mono);
-  font-weight: 600;
-  color: var(--accent-rose);
-  background: rgba(0, 0, 0, 0.4);
+  font-weight: 700;
+  color: #ffffff;
+  background: #141416;
   padding: 2px 8px;
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(244, 63, 94, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-/* Main Layout */
+/* ==========================================================================
+   Main Layout & Metrics
+   ========================================================================== */
 .main-container {
   max-width: 1200px;
   margin: 0 auto;
@@ -235,7 +257,6 @@ body {
   z-index: 1;
 }
 
-/* Metrics Grid */
 .metrics-grid {
   display: grid;
   grid-template-columns: 1.5fr 1fr 1fr;
@@ -263,8 +284,8 @@ body {
   transform: translateY(-2px);
 }
 .metric-card.highlight {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(15, 17, 24, 0.95) 100%);
-  border-color: rgba(99, 102, 241, 0.3);
+  background: #0e0e11;
+  border-color: rgba(255, 255, 255, 0.28);
   box-shadow: var(--shadow-glow);
 }
 .metric-header {
@@ -282,10 +303,10 @@ body {
 .countdown-badge {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--accent-cyan);
-  background: rgba(6, 182, 212, 0.1);
-  border: 1px solid rgba(6, 182, 212, 0.25);
+  font-weight: 700;
+  color: #ffffff;
+  background: #18181b;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   padding: 3px 8px;
   border-radius: var(--radius-pill);
 }
@@ -297,6 +318,7 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
   margin-bottom: 4px;
+  color: #ffffff;
 }
 .metric-subtext {
   font-size: 0.85rem;
@@ -312,15 +334,18 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 0.8rem;
-  color: var(--accent-primary);
-  text-decoration: none;
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
   font-weight: 600;
 }
 .link-preview:hover {
-  text-decoration: underline;
+  color: var(--accent-primary-hover);
 }
 
-/* Tabs Bar */
+/* ==========================================================================
+   Tabs Navigation Bar
+   ========================================================================== */
 .tabs-bar {
   display: flex;
   gap: 8px;
@@ -343,10 +368,10 @@ body {
   transition: color 0.2s ease;
 }
 .tab-btn:hover {
-  color: var(--text-main);
+  color: #ffffff;
 }
 .tab-btn.active {
-  color: var(--accent-primary);
+  color: #ffffff;
 }
 .tab-btn.active::after {
   content: '';
@@ -355,8 +380,8 @@ body {
   left: 0;
   right: 0;
   height: 2px;
-  background: var(--accent-primary);
-  box-shadow: 0 0 12px var(--accent-primary);
+  background: #ffffff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
 }
 .tab-content {
   display: none;
@@ -370,7 +395,9 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Section Toolbar */
+/* ==========================================================================
+   Section Toolbar & Day Filters
+   ========================================================================== */
 .section-toolbar {
   display: flex;
   align-items: center;
@@ -398,23 +425,26 @@ body {
 }
 .day-filter:hover {
   border-color: var(--border-hover);
-  color: var(--text-main);
+  color: #ffffff;
 }
 .day-filter.active {
-  background: rgba(99, 102, 241, 0.15);
-  border-color: var(--accent-primary);
-  color: #fff;
-  box-shadow: 0 0 14px rgba(99, 102, 241, 0.2);
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #000000;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(255, 255, 255, 0.2);
 }
 
-/* Buttons */
+/* ==========================================================================
+   Buttons (High-Contrast Monochrome)
+   ========================================================================== */
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-primary-hover) 100%);
-  color: #fff;
-  border: none;
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #ffffff;
   font-family: var(--font-sans);
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 700;
   padding: 10px 18px;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -422,16 +452,18 @@ body {
   align-items: center;
   gap: 8px;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 4px 14px rgba(255, 255, 255, 0.12);
 }
 .btn-primary:hover {
+  background: var(--accent-primary-hover);
+  border-color: var(--accent-primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+  box-shadow: 0 6px 20px rgba(255, 255, 255, 0.22);
 }
 .btn-secondary {
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-main);
+  border: 1px solid var(--border-hover);
+  color: #ffffff;
   font-family: var(--font-sans);
   font-size: 0.85rem;
   font-weight: 600;
@@ -445,12 +477,12 @@ body {
 }
 .btn-secondary:hover {
   background: var(--bg-card-hover);
-  border-color: var(--border-hover);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 .btn-danger {
-  background: var(--accent-rose);
-  color: #fff;
-  border: none;
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
   font-family: var(--font-sans);
   font-size: 0.85rem;
   font-weight: 600;
@@ -463,7 +495,9 @@ body {
   transition: all 0.2s ease;
 }
 .btn-danger:hover {
-  background: #e11d48;
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
 }
 .btn-sm {
   font-size: 0.78rem;
@@ -474,7 +508,9 @@ body {
   padding: 14px 24px;
 }
 
-/* Timetable Cards Grid */
+/* ==========================================================================
+   Timetable Cards Grid
+   ========================================================================== */
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -498,7 +534,7 @@ body {
   box-shadow: var(--shadow-subtle);
 }
 .class-card.disabled {
-  opacity: 0.6;
+  opacity: 0.5;
 }
 .class-card-header {
   display: flex;
@@ -510,12 +546,13 @@ body {
   font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: -0.01em;
+  color: #ffffff;
 }
 .class-card-time {
   font-family: var(--font-mono);
   font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--accent-cyan);
+  font-weight: 700;
+  color: #ffffff;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -543,9 +580,10 @@ body {
   border: 1px solid var(--border-subtle);
 }
 .day-tag.active {
-  background: rgba(99, 102, 241, 0.15);
-  color: var(--accent-primary);
-  border-color: rgba(99, 102, 241, 0.35);
+  background: #ffffff;
+  color: #000000;
+  font-weight: 800;
+  border-color: #ffffff;
 }
 .class-card-link {
   background: var(--bg-input);
@@ -580,11 +618,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.15s;
+  transition: color 0.15s, background-color 0.15s;
 }
 .btn-icon:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
 }
 .class-card-actions {
   display: flex;
@@ -594,7 +632,9 @@ body {
   border-top: 1px solid var(--border-subtle);
 }
 
-/* Switch Control */
+/* ==========================================================================
+   Switch Control (Monochrome Pure White Knob & Track)
+   ========================================================================== */
 .switch-control {
   position: relative;
   display: inline-block;
@@ -610,26 +650,29 @@ body {
 .switch-slider {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background-color: #272a34;
+  background-color: #27272a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 34px;
   transition: 0.25s;
 }
 .switch-slider:before {
   position: absolute;
   content: "";
-  height: 16px;
-  width: 16px;
+  height: 14px;
+  width: 14px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
+  background-color: #71717a;
   border-radius: 50%;
   transition: 0.25s;
 }
 input:checked + .switch-slider {
-  background-color: var(--accent-emerald);
+  background-color: #ffffff;
+  border-color: #ffffff;
 }
 input:checked + .switch-slider:before {
   transform: translateX(18px);
+  background-color: #000000;
 }
 
 /* Empty State */
@@ -642,9 +685,12 @@ input:checked + .switch-slider:before {
 .empty-icon {
   font-size: 2.5rem;
   margin-bottom: 12px;
+  color: var(--text-dim);
 }
 
-/* Instant Record Card */
+/* ==========================================================================
+   Instant Record Card
+   ========================================================================== */
 .instant-card {
   max-width: 650px;
   margin: 0 auto;
@@ -664,8 +710,9 @@ input:checked + .switch-slider:before {
   width: 48px;
   height: 48px;
   border-radius: var(--radius-sm);
-  background: rgba(99, 102, 241, 0.15);
-  color: var(--accent-primary);
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -673,6 +720,7 @@ input:checked + .switch-slider:before {
 .instant-header h3 {
   font-size: 1.25rem;
   margin-bottom: 4px;
+  color: #ffffff;
 }
 .instant-header p {
   font-size: 0.85rem;
@@ -712,17 +760,19 @@ input[type="text"]:focus,
 input[type="url"]:focus,
 input[type="time"]:focus,
 input[type="number"]:focus {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+  border-color: #ffffff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.15);
 }
 
-/* Modal Window */
+/* ==========================================================================
+   Modal Window
+   ========================================================================== */
 .modal-backdrop {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   z-index: 200;
   display: flex;
   align-items: center;
@@ -736,7 +786,7 @@ input[type="number"]:focus {
   border: 1px solid var(--border-hover);
   border-radius: var(--radius-md);
   padding: 28px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9);
   animation: modalIn 0.2s ease-out;
 }
 @keyframes modalIn {
@@ -752,6 +802,7 @@ input[type="number"]:focus {
 .modal-header h3 {
   font-size: 1.25rem;
   font-weight: 700;
+  color: #ffffff;
 }
 .btn-close {
   background: transparent;
@@ -762,7 +813,7 @@ input[type="number"]:focus {
   line-height: 1;
 }
 .btn-close:hover {
-  color: #fff;
+  color: #ffffff;
 }
 .label-with-presets {
   display: flex;
@@ -772,20 +823,22 @@ input[type="number"]:focus {
 }
 .day-presets {
   display: flex;
-  gap: 4px;
+  gap: 6px;
 }
 .btn-preset {
-  background: transparent;
-  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-subtle);
   font-size: 0.75rem;
-  color: var(--accent-primary);
+  color: #ffffff;
   cursor: pointer;
-  padding: 2px 6px;
+  padding: 3px 8px;
   border-radius: var(--radius-sm);
   font-weight: 600;
+  transition: all 0.15s;
 }
 .btn-preset:hover {
-  background: rgba(99, 102, 241, 0.1);
+  background: #ffffff;
+  color: #000000;
 }
 .day-checkbox-pills {
   display: flex;
@@ -808,10 +861,11 @@ input[type="number"]:focus {
   transition: all 0.15s ease;
 }
 .day-pill input:checked + span {
-  background: rgba(99, 102, 241, 0.2);
-  border-color: var(--accent-primary);
-  color: #fff;
-  box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #000000;
+  font-weight: 800;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.2);
 }
 .checkbox-group {
   display: flex;
@@ -831,7 +885,9 @@ input[type="number"]:focus {
   border-top: 1px solid var(--border-subtle);
 }
 
-/* Recordings Table */
+/* ==========================================================================
+   Recordings Table
+   ========================================================================== */
 .recordings-table-wrapper {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -860,7 +916,7 @@ input[type="number"]:focus {
   color: var(--text-muted);
 }
 .recordings-table tr:hover td {
-  background: rgba(255, 255, 255, 0.015);
+  background: rgba(255, 255, 255, 0.025);
 }
 .recordings-table td:first-child {
   color: var(--text-main);
@@ -869,19 +925,17 @@ input[type="number"]:focus {
   font-size: 0.82rem;
 }
 
-/* File Badge */
+/* File Badge (Monochrome) */
 .file-badge {
   font-size: 0.72rem;
   font-weight: 700;
   padding: 3px 8px;
   border-radius: var(--radius-sm);
   text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #ffffff;
 }
-.file-badge.video { background: rgba(99, 102, 241, 0.15); color: var(--accent-primary); }
-.file-badge.transcript { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
-.file-badge.subtitles { background: rgba(6, 182, 212, 0.15); color: var(--accent-cyan); }
-.file-badge.attendance { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); }
-.file-badge.metadata { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); }
 
 /* Toast Notifications */
 .toast-container {
@@ -894,27 +948,27 @@ input[type="number"]:focus {
   z-index: 300;
 }
 .toast {
-  background: var(--bg-card);
-  border: 1px solid var(--border-hover);
-  color: #fff;
+  background: #0d0d0f;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
   padding: 12px 20px;
   border-radius: var(--radius-sm);
   font-size: 0.85rem;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.9);
   display: flex;
   align-items: center;
   gap: 10px;
   animation: toastIn 0.25s ease forwards;
 }
-.toast.success { border-left: 3px solid var(--accent-emerald); }
-.toast.error { border-left: 3px solid var(--accent-rose); }
+.toast.success { border-left: 3px solid #ffffff; }
+.toast.error { border-left: 3px solid #71717a; }
 @keyframes toastIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 /* ==========================================================================
-   Account Pill & Settings View Styles
+   Account Pill & Settings View (Monochrome)
    ========================================================================== */
 
 /* Navbar Account Pill */
@@ -937,15 +991,16 @@ input[type="number"]:focus {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+  background: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
+  font-weight: 800;
   font-size: 0.75rem;
-  color: #fff;
+  color: #000000;
   overflow: hidden;
   flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.4);
 }
 .avatar-circle img {
   width: 100%;
@@ -960,7 +1015,7 @@ input[type="number"]:focus {
 .pill-name {
   font-size: 0.78rem;
   font-weight: 600;
-  color: var(--text-main);
+  color: #ffffff;
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1004,16 +1059,16 @@ input[type="number"]:focus {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #ffffff;
 }
-.settings-icon.account-icon { background: rgba(99, 102, 241, 0.15); color: var(--accent-primary); }
-.settings-icon.leave-icon { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); }
-.settings-icon.folder-icon { background: rgba(6, 182, 212, 0.15); color: var(--accent-cyan); }
-.settings-icon.bot-icon { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); }
 
 .settings-card-header h3 {
   font-size: 1.15rem;
   font-weight: 700;
   margin-bottom: 4px;
+  color: #ffffff;
 }
 .settings-card-header p {
   font-size: 0.85rem;
@@ -1042,15 +1097,16 @@ input[type="number"]:focus {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+  background: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
+  font-weight: 800;
   font-size: 1.1rem;
-  color: #fff;
+  color: #000000;
   overflow: hidden;
   flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.5);
 }
 .avatar-large img {
   width: 100%;
@@ -1060,6 +1116,7 @@ input[type="number"]:focus {
 .account-card-left h4 {
   font-size: 1rem;
   font-weight: 700;
+  color: #ffffff;
 }
 .account-email-text {
   font-size: 0.82rem;
@@ -1073,16 +1130,17 @@ input[type="number"]:focus {
   border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   text-transform: uppercase;
 }
 .badge-success {
   font-size: 0.68rem;
-  font-weight: 700;
+  font-weight: 800;
   padding: 2px 8px;
   border-radius: var(--radius-pill);
-  background: rgba(16, 185, 129, 0.15);
-  color: var(--accent-emerald);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #ffffff;
   text-transform: uppercase;
 }
 .account-card-right {
@@ -1097,7 +1155,8 @@ input[type="number"]:focus {
 }
 .tip-text code {
   font-family: var(--font-mono);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
   padding: 2px 5px;
   border-radius: 4px;
 }
@@ -1135,7 +1194,8 @@ input[type="number"]:focus {
 }
 .helper-text code {
   font-family: var(--font-mono);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
   padding: 1px 4px;
   border-radius: 3px;
 }
@@ -1158,7 +1218,7 @@ input[type="number"]:focus {
 .checkbox-item input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: var(--accent-primary);
+  accent-color: #ffffff;
   margin-top: 2px;
 }
 .checkbox-item span {
