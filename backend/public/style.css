@@ -245,6 +245,28 @@ body {
   border-radius: var(--radius-sm);
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
+.live-status-tag {
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: #18181b;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  letter-spacing: 0.02em;
+}
+.live-status-tag.retry {
+  background: #ffffff;
+  color: #000000;
+  border-color: #ffffff;
+  font-weight: 800;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+  animation: pulse-border 1.5s infinite alternate;
+}
+@keyframes pulse-border {
+  0% { transform: scale(0.98); opacity: 0.9; }
+  100% { transform: scale(1.02); opacity: 1; }
+}
 
 /* ==========================================================================
    Main Layout & Metrics

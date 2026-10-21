@@ -64,11 +64,12 @@
     <div class="live-banner-content">
       <div class="live-badge">
         <span class="live-pulse"></span>
-        <span>RECORDING LIVE</span>
+        <span id="live-badge-status">RECORDING LIVE</span>
       </div>
       <div class="live-info">
         <span class="live-title" id="live-session-name">Maths Lecture</span>
         <span class="live-time" id="live-session-timer">00:00:00</span>
+        <span class="live-status-tag" id="live-session-status" style="display: none;"></span>
       </div>
       <button id="btn-stop-live-rec" class="btn-danger btn-sm">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
@@ -430,6 +431,44 @@
                 Open in Default Browser Now
               </button>
             </div>
+          </form>
+        </div>
+
+        <!-- 6. Auto-Rejoin & Failure Retries Card -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <div class="settings-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+            </div>
+            <div>
+              <h3>Auto-Rejoin & Failure Retries</h3>
+              <p>Configure automatic rejoin attempts if joining class fails or if Google Meet disconnects mid-session.</p>
+            </div>
+          </div>
+
+          <form id="form-rejoin-settings" class="settings-form">
+            <div class="form-row-2">
+              <div class="form-group">
+                <label for="setting-rejoin-retries">Max Retry Attempts</label>
+                <input type="number" id="setting-rejoin-retries" min="1" max="10" value="3" required>
+                <small class="helper-text">Default: 3 retries. Bot automatically attempts to rejoin before giving up.</small>
+              </div>
+              <div class="form-group">
+                <label for="setting-rejoin-delay">Retry Interval (Seconds)</label>
+                <input type="number" id="setting-rejoin-delay" min="3" max="120" value="10" required>
+                <small class="helper-text">Wait time between consecutive retry attempts.</small>
+              </div>
+            </div>
+
+            <div class="form-group checkbox-group">
+              <label class="switch-control">
+                <input type="checkbox" id="setting-auto-rejoin-disconnect" checked>
+                <span class="switch-slider"></span>
+              </label>
+              <span class="switch-label"><strong>Auto-rejoin on unexpected disconnect</strong> (If the Meet call drops or network flickers mid-class, automatically reconnect)</span>
+            </div>
+
+            <button type="submit" class="btn-primary btn-sm">Save Rejoin Settings</button>
           </form>
         </div>
       </div>

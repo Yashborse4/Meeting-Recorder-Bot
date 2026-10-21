@@ -7,12 +7,15 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const { MeetRecorderBot } = require('./meetBot');
+const { getSettings } = require('./settingsManager');
 
 const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const DAY_FULL_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 let activeRecordingState = null;
 let activeBotInstance = null;
+let activeStopTimer = null;
+let isMidSessionRejoining = false;
 let isDaemonRunning = false;
 let daemonInterval = null;
 const recordedToday = new Set(); // Prevents duplicate recordings on the same day
@@ -278,45 +281,170 @@ async function startManualSession(link, durationMinutes = 60, name = 'Manual Rec
     throw new Error('A recording session is already currently active!');
   }
 
+  const settings = getSettings();
+  const maxRetries = settings.rejoinRetries !== undefined ? Math.max(1, parseInt(settings.rejoinRetries, 10)) : 3;
+  const retryDelaySec = settings.rejoinDelaySec !== undefined ? Math.max(1, parseInt(settings.rejoinDelaySec, 10)) : 10;
   const durationMs = durationMinutes * 60 * 1000;
-  const bot = new MeetRecorderBot({
-    botName: `${name} Bot`,
-    muteMicOnJoin: true,
-    turnOffCameraOnJoin: true,
-  });
 
-  activeBotInstance = bot;
   activeRecordingState = {
     name,
     link,
     startedAt: Date.now(),
     durationMinutes,
     durationMs,
+    attempt: 1,
+    maxRetries,
+    status: `Joining class (Attempt 1/${maxRetries})...`,
   };
 
-  try {
-    await bot.launch();
-    await bot.joinMeeting(link);
-    await new Promise((r) => setTimeout(r, 4000));
-    await bot.startRecording();
+  let bot = null;
+  let lastError = null;
 
-    // Set auto-stop timer
-    setTimeout(async () => {
-      if (activeBotInstance === bot) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    activeRecordingState.attempt = attempt;
+    activeRecordingState.status = attempt === 1
+      ? `Joining class (Attempt 1/${maxRetries})...`
+      : `Rejoining class (Attempt ${attempt}/${maxRetries})...`;
+
+    console.log(`[Scheduler] ${activeRecordingState.status} - "${name}"`);
+
+    bot = new MeetRecorderBot({
+      botName: `${name} Bot`,
+      muteMicOnJoin: settings.muteMicOnJoin !== false,
+      turnOffCameraOnJoin: settings.turnOffCameraOnJoin !== false,
+      autoLeave: settings.autoLeave,
+    });
+    activeBotInstance = bot;
+
+    try {
+      await bot.launch();
+      await bot.joinMeeting(link);
+      await new Promise((r) => setTimeout(r, 3000));
+
+      const onAutoLeave = async (reason) => {
+        console.log(`[Scheduler] Auto-leave triggered (${reason}) for "${name}". Finalizing session...`);
         await stopActiveSession().catch(() => {});
-      }
-    }, durationMs);
+      };
 
-    return { ok: true, name, link, durationMinutes };
-  } catch (err) {
-    activeBotInstance = null;
-    activeRecordingState = null;
-    try { await bot.close(); } catch {}
-    throw err;
+      const onUnexpectedDisconnect = async (reason) => {
+        console.warn(`[Scheduler] Unexpected disconnect (${reason}) during "${name}".`);
+        if (settings.autoRejoinOnDisconnect !== false && activeRecordingState) {
+          handleMidSessionRejoin(link, durationMinutes, name);
+        } else {
+          await stopActiveSession().catch(() => {});
+        }
+      };
+
+      await bot.startRecording(durationMinutes, onAutoLeave, onUnexpectedDisconnect);
+
+      activeRecordingState.status = 'Recording live';
+      console.log(`[Scheduler] Successfully joined and recording: "${name}" (Attempt ${attempt}/${maxRetries})`);
+
+      // Set auto-stop timer
+      if (activeStopTimer) clearTimeout(activeStopTimer);
+      activeStopTimer = setTimeout(async () => {
+        if (activeBotInstance === bot) {
+          console.log(`[Scheduler] Scheduled duration (${durationMinutes}m) reached. Auto-stopping.`);
+          await stopActiveSession().catch(() => {});
+        }
+      }, durationMs);
+
+      return { ok: true, name, link, durationMinutes, attempt, maxRetries };
+    } catch (err) {
+      lastError = err;
+      console.error(`[Scheduler] Attempt ${attempt}/${maxRetries} failed for "${name}":`, err.message);
+
+      if (bot) {
+        try { await bot.close(); } catch {}
+        bot = null;
+      }
+      activeBotInstance = null;
+
+      if (attempt < maxRetries) {
+        activeRecordingState.status = `Attempt ${attempt}/${maxRetries} failed. Retrying rejoin in ${retryDelaySec}s...`;
+        console.log(`[Scheduler] Waiting ${retryDelaySec}s before attempt ${attempt + 1}/${maxRetries}...`);
+        await new Promise((r) => setTimeout(r, retryDelaySec * 1000));
+      }
+    }
   }
+
+  // All retries failed
+  activeBotInstance = null;
+  activeRecordingState = null;
+  throw new Error(`Failed to join class "${name}" after ${maxRetries} attempts. Last error: ${lastError?.message || 'Unknown'}`);
+}
+
+async function handleMidSessionRejoin(link, durationMinutes, name) {
+  if (isMidSessionRejoining || !activeRecordingState) return;
+  isMidSessionRejoining = true;
+
+  const settings = getSettings();
+  const maxRetries = settings.rejoinRetries !== undefined ? Math.max(1, parseInt(settings.rejoinRetries, 10)) : 3;
+  const retryDelaySec = settings.rejoinDelaySec !== undefined ? Math.max(1, parseInt(settings.rejoinDelaySec, 10)) : 10;
+
+  console.log(`[Scheduler] Initiating automatic mid-session rejoin for "${name}" (up to ${maxRetries} attempts)...`);
+
+  if (activeBotInstance) {
+    try { await activeBotInstance.close(); } catch {}
+    activeBotInstance = null;
+  }
+
+  const elapsed = Date.now() - (activeRecordingState.startedAt || Date.now());
+  const remainingMinutes = Math.max(5, Math.ceil((activeRecordingState.durationMs - elapsed) / 60000));
+
+  for (let retry = 1; retry <= maxRetries; retry++) {
+    if (!activeRecordingState) break; // Terminated manually
+    activeRecordingState.status = `Rejoining class after disconnect (Attempt ${retry}/${maxRetries})...`;
+
+    try {
+      const bot = new MeetRecorderBot({
+        botName: `${name} Bot`,
+        muteMicOnJoin: settings.muteMicOnJoin !== false,
+        turnOffCameraOnJoin: settings.turnOffCameraOnJoin !== false,
+        autoLeave: settings.autoLeave,
+      });
+      activeBotInstance = bot;
+
+      await bot.launch();
+      await bot.joinMeeting(link);
+      await new Promise((r) => setTimeout(r, 3000));
+
+      await bot.startRecording(
+        remainingMinutes,
+        async () => { await stopActiveSession().catch(() => {}); },
+        () => { handleMidSessionRejoin(link, remainingMinutes, name); }
+      );
+
+      activeRecordingState.status = 'Recording live';
+      console.log(`[Scheduler] Successfully reconnected to "${name}"!`);
+      isMidSessionRejoining = false;
+      return;
+    } catch (e) {
+      console.warn(`[Scheduler] Mid-session rejoin attempt ${retry}/${maxRetries} failed:`, e.message);
+      if (activeBotInstance) {
+        try { await activeBotInstance.close(); } catch {}
+        activeBotInstance = null;
+      }
+      if (retry < maxRetries) {
+        activeRecordingState.status = `Rejoin attempt ${retry}/${maxRetries} failed. Retrying in ${retryDelaySec}s...`;
+        await new Promise((r) => setTimeout(r, retryDelaySec * 1000));
+      }
+    }
+  }
+
+  console.error(`[Scheduler] Exhausted all ${maxRetries} rejoin attempts for "${name}". Ending session.`);
+  isMidSessionRejoining = false;
+  activeBotInstance = null;
+  activeRecordingState = null;
 }
 
 async function stopActiveSession() {
+  if (activeStopTimer) {
+    clearTimeout(activeStopTimer);
+    activeStopTimer = null;
+  }
+  isMidSessionRejoining = false;
+
   if (!activeBotInstance) {
     return { ok: false, message: 'No recording is currently active.' };
   }

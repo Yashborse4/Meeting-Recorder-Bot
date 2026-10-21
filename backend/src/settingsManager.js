@@ -16,6 +16,9 @@ const DEFAULT_SETTINGS = {
   turnOffCameraOnJoin: true,
   autoOpenBrowser: true,
   browserEngine: 'testing_chrome', // 'testing_chrome' | 'system_chrome'
+  rejoinRetries: 3, // Auto retry up to 3 times to rejoin class if disconnected or join fails
+  rejoinDelaySec: 10, // Wait 10 seconds between retry attempts
+  autoRejoinOnDisconnect: true, // Auto retry rejoins if call drops unexpectedly
   autoLeave: {
     enabled: true,
     minParticipants: 2,

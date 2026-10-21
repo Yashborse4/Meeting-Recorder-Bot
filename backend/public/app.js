@@ -126,6 +126,27 @@ document.addEventListener('DOMContentLoaded', () => {
         liveRecordingBanner.style.display = 'block';
         liveSessionName.textContent = data.activeRecording.name || 'Live Meeting';
         liveSessionTimer.textContent = data.activeRecording.elapsedStr || 'Recording...';
+
+        const liveBadgeStatus = document.getElementById('live-badge-status');
+        const liveSessionStatus = document.getElementById('live-session-status');
+
+        if (data.activeRecording.status) {
+          if (liveBadgeStatus) {
+            liveBadgeStatus.textContent = data.activeRecording.status.toUpperCase();
+          }
+          if (liveSessionStatus) {
+            liveSessionStatus.textContent = data.activeRecording.status;
+            liveSessionStatus.style.display = 'inline-block';
+            if (/rejoin|retry|fail|attempt/i.test(data.activeRecording.status)) {
+              liveSessionStatus.className = 'live-status-tag retry';
+            } else {
+              liveSessionStatus.className = 'live-status-tag';
+            }
+          }
+        } else {
+          if (liveBadgeStatus) liveBadgeStatus.textContent = 'RECORDING LIVE';
+          if (liveSessionStatus) liveSessionStatus.style.display = 'none';
+        }
       } else {
         liveRecordingBanner.style.display = 'none';
       }
@@ -840,6 +861,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (autoOpenEl) autoOpenEl.checked = settings.autoOpenBrowser !== false;
       const browserEngineEl = document.getElementById('setting-browser-engine');
       if (browserEngineEl) browserEngineEl.value = settings.browserEngine || 'testing_chrome';
+
+      // Rejoin & Retry settings
+      const rejoinRetriesEl = document.getElementById('setting-rejoin-retries');
+      if (rejoinRetriesEl) rejoinRetriesEl.value = settings.rejoinRetries !== undefined ? settings.rejoinRetries : 3;
+      const rejoinDelayEl = document.getElementById('setting-rejoin-delay');
+      if (rejoinDelayEl) rejoinDelayEl.value = settings.rejoinDelaySec !== undefined ? settings.rejoinDelaySec : 10;
+      const autoRejoinEl = document.getElementById('setting-auto-rejoin-disconnect');
+      if (autoRejoinEl) autoRejoinEl.checked = settings.autoRejoinOnDisconnect !== false;
     } catch {}
   }
 
@@ -935,6 +964,29 @@ document.addEventListener('DOMContentLoaded', () => {
       if (data.ok) showToast('Browser launch settings saved!');
     } catch {
       showToast('Failed to save browser settings', 'error');
+    }
+  });
+
+  // Save Rejoin & Retry Settings
+  const formRejoinSettings = document.getElementById('form-rejoin-settings');
+  formRejoinSettings?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload = {
+      rejoinRetries: parseInt(document.getElementById('setting-rejoin-retries').value, 10),
+      rejoinDelaySec: parseInt(document.getElementById('setting-rejoin-delay').value, 10),
+      autoRejoinOnDisconnect: document.getElementById('setting-auto-rejoin-disconnect').checked,
+    };
+
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.ok) showToast('Rejoin & retry preferences saved!');
+    } catch {
+      showToast('Failed to save rejoin preferences', 'error');
     }
   });
 

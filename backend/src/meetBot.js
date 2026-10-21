@@ -46,7 +46,7 @@ class MeetRecorderBot {
     await context.overridePermissions(meetingUrl, ['microphone', 'camera']);
 
     await this.page.goto(meetingUrl, { waitUntil: 'networkidle2', timeout: 60000 });
-    await new Promise((r) => setTimeout(r, 4000));
+    await new Promise((r) => setTimeout(r, 3000));
 
     // Handle lobby name input (if not logged into Google account)
     try {
@@ -58,7 +58,9 @@ class MeetRecorderBot {
         await nameInput.type(this.options.botName, { delay: 40 });
         await new Promise((r) => setTimeout(r, 1000));
       }
-    } catch {}
+    } catch (e) {
+      console.warn('[Backend/MeetBot] Name input handling:', e.message);
+    }
 
     // Turn off camera and mute mic if requested
     if (this.options.turnOffCameraOnJoin) {
@@ -66,6 +68,7 @@ class MeetRecorderBot {
         await this.page.keyboard.down('Control');
         await this.page.keyboard.press('KeyE');
         await this.page.keyboard.up('Control');
+        await new Promise((r) => setTimeout(r, 500));
       } catch {}
     }
 
@@ -74,23 +77,71 @@ class MeetRecorderBot {
         await this.page.keyboard.down('Control');
         await this.page.keyboard.press('KeyD');
         await this.page.keyboard.up('Control');
+        await new Promise((r) => setTimeout(r, 500));
       } catch {}
     }
 
-    // Click "Join now" or "Ask to join" button
-    console.log('[Backend/MeetBot] Attempting to click Join button...');
-    try {
-      const joinButtons = await this.page.$$('button');
-      for (const btn of joinButtons) {
-        const text = await (await btn.getProperty('innerText')).jsonValue();
-        if (/join now|ask to join|join/i.test(text.trim())) {
-          await btn.click();
-          console.log(`[Backend/MeetBot] Clicked button: "${text.trim()}"`);
-          break;
-        }
+    // Poll for Join / Ask to join / Rejoin button
+    console.log('[Backend/MeetBot] Searching for Join/Rejoin button...');
+    let joined = false;
+    const maxPollAttempts = 10;
+    for (let i = 0; i < maxPollAttempts; i++) {
+      // 1. Check if an error message is visible
+      const errorMsg = await this.page.evaluate(() => {
+        const text = document.body ? document.body.innerText || '' : '';
+        if (text.includes("You can't join this video call")) return "You can't join this video call";
+        if (text.includes("Couldn't connect to the meeting")) return "Couldn't connect to the meeting";
+        if (text.includes("This meeting link is invalid") || text.includes("Invalid meeting code")) return "Invalid meeting link";
+        return null;
+      });
+
+      if (errorMsg) {
+        throw new Error(`Google Meet lobby error: ${errorMsg}`);
       }
-    } catch (e) {
-      console.warn('[Backend/MeetBot] Join button click warning:', e.message);
+
+      // 2. Check if already in meeting (leave call button present)
+      const inCall = await this.page.evaluate(() => {
+        const leaveBtn = document.querySelector('button[aria-label*="leave call" i], button[aria-label*="leave meeting" i]');
+        return !!leaveBtn;
+      });
+
+      if (inCall) {
+        console.log('[Backend/MeetBot] Already entered meeting room.');
+        joined = true;
+        break;
+      }
+
+      // 3. Find and click Join / Rejoin / Ask to join button
+      const clicked = await this.page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
+        for (const btn of buttons) {
+          const text = (btn.innerText || '').trim();
+          const aria = (btn.getAttribute('aria-label') || '').trim();
+          const combined = `${text} ${aria}`.toLowerCase();
+
+          if (/^(join now|ask to join|join|rejoin)$/i.test(text) ||
+              combined.includes('join now') ||
+              combined.includes('ask to join') ||
+              combined.includes('rejoin') ||
+              combined === 'join') {
+            btn.click();
+            return text || aria || 'Join';
+          }
+        }
+        return null;
+      });
+
+      if (clicked) {
+        console.log(`[Backend/MeetBot] Clicked button: "${clicked}"`);
+        joined = true;
+        break;
+      }
+
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+
+    if (!joined) {
+      console.warn('[Backend/MeetBot] Could not find explicit Join button, checking if already in waiting lobby...');
     }
 
     await new Promise((r) => setTimeout(r, 4000));
@@ -102,7 +153,7 @@ class MeetRecorderBot {
     } catch {}
   }
 
-  async startRecording(durationMinutes = 60, onAutoLeave = null) {
+  async startRecording(durationMinutes = 60, onAutoLeave = null, onUnexpectedDisconnect = null) {
     if (!this.page) throw new Error('Bot not active.');
     console.log('[Backend/MeetBot] Dispatching START_RECORDING_BOT event hands-free...');
 
@@ -114,14 +165,12 @@ class MeetRecorderBot {
     this.isRecording = true;
     console.log('[Backend/MeetBot] Recording successfully initiated!');
 
-    // Start auto-leave watcher
-    this.startAutoLeaveWatcher(durationMinutes, onAutoLeave);
+    // Start auto-leave and disconnect watcher
+    this.startAutoLeaveWatcher(durationMinutes, onAutoLeave, onUnexpectedDisconnect);
   }
 
-  startAutoLeaveWatcher(durationMinutes, onAutoLeave) {
+  startAutoLeaveWatcher(durationMinutes, onAutoLeave, onUnexpectedDisconnect) {
     const autoLeave = this.options.autoLeave || {};
-    if (!autoLeave.enabled) return;
-
     const startTime = Date.now();
     const maxDurationMs = durationMinutes * 60 * 1000;
     let lowParticipantStart = null;
@@ -133,8 +182,35 @@ class MeetRecorderBot {
       }
 
       try {
+        if (this.page.isClosed()) {
+          console.log('[Backend/MeetBot] Meet page was closed unexpectedly.');
+          clearInterval(this.monitorInterval);
+          if (typeof onUnexpectedDisconnect === 'function') onUnexpectedDisconnect('page_closed');
+          return;
+        }
+
+        // Check for on-screen "Rejoin" / "Try again" prompt after connection drop
+        const clickedRejoin = await this.page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll('button, [role="button"], a'));
+          const rejoinBtn = buttons.find((b) => {
+            const text = (b.innerText || '').trim().toLowerCase();
+            const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+            return text === 'rejoin' || aria.includes('rejoin') || text === 'try again';
+          });
+          if (rejoinBtn) {
+            rejoinBtn.click();
+            return true;
+          }
+          return false;
+        });
+
+        if (clickedRejoin) {
+          console.log('[Backend/MeetBot] 🔄 Detected on-screen Rejoin button after disconnect. Clicked Rejoin!');
+          return;
+        }
+
         // 1. Check max duration limit
-        if (autoLeave.maxDurationEnforced && Date.now() - startTime >= maxDurationMs) {
+        if (autoLeave.enabled && autoLeave.maxDurationEnforced && Date.now() - startTime >= maxDurationMs) {
           console.log(`[Backend/MeetBot] Max scheduled duration (${durationMinutes}m) reached. Auto-leaving meeting...`);
           clearInterval(this.monitorInterval);
           await this.leaveAndStop();
@@ -143,9 +219,9 @@ class MeetRecorderBot {
         }
 
         // 2. Check if host ended call or exit screen is visible
-        if (autoLeave.onHostExit) {
+        if (autoLeave.enabled && autoLeave.onHostExit) {
           const isExitScreen = await this.page.evaluate(() => {
-            const body = document.body.innerText || '';
+            const body = document.body ? document.body.innerText || '' : '';
             return (
               body.includes('The meeting has ended for everyone') ||
               body.includes('Your host ended the meeting') ||
@@ -163,8 +239,23 @@ class MeetRecorderBot {
           }
         }
 
-        // 3. Check participant count drop
-        if (autoLeave.minParticipants && autoLeave.minParticipants > 0) {
+        // 3. Check for unexpected network disconnected screen (without a clickable rejoin)
+        const isNetworkDropped = await this.page.evaluate(() => {
+          const body = document.body ? document.body.innerText || '' : '';
+          return body.includes('You lost your network connection') || body.includes('Unable to join the call');
+        });
+
+        if (isNetworkDropped) {
+          console.warn('[Backend/MeetBot] Network connection dropped in Google Meet.');
+          clearInterval(this.monitorInterval);
+          if (typeof onUnexpectedDisconnect === 'function') {
+            onUnexpectedDisconnect('network_dropped');
+            return;
+          }
+        }
+
+        // 4. Check participant count drop
+        if (autoLeave.enabled && autoLeave.minParticipants && autoLeave.minParticipants > 0) {
           const participantCount = await this.page.evaluate(() => {
             const peopleBtn = document.querySelector(
               'button[aria-label*="people" i], button[aria-label*="everyone" i], button[aria-label*="participants" i]'
@@ -210,7 +301,7 @@ class MeetRecorderBot {
       } catch (err) {
         // Page navigation or evaluation error
       }
-    }, 5000);
+    }, 4000);
   }
 
   async leaveAndStop() {
