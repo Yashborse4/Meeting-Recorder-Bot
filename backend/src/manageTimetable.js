@@ -1,15 +1,9 @@
 /**
  * backend/src/manageTimetable.js
- * CLI Helper to view, add, and manage scheduled classes
+ * CLI helper to view, add, and manage scheduled classes
  */
 
-const fs = require('fs');
-const config = require('./config');
-const { loadTimetable, printTimetableSummary } = require('./scheduler');
-
-function saveTimetable(data) {
-  fs.writeFileSync(config.TIMETABLE_FILE, JSON.stringify(data, null, 2), 'utf-8');
-}
+const timetableModel = require('./models/timetableModel');
 
 function handleAdd(args) {
   // Usage: node manageTimetable.js add "Class Name" "https://meet.google.com/xyz" "mon,wed,fri" "10:00" [durationMinutes]
@@ -28,29 +22,21 @@ function handleAdd(args) {
   }
 
   const days = daysStr.split(',').map((d) => d.trim().toLowerCase());
-  const timetable = loadTimetable();
-
-  const id = `class-${Date.now()}`;
-  const newClass = {
-    id,
+  const entry = timetableModel.addOrUpdateClass({
     name,
     link,
     days,
     time,
     duration,
     enabled: true,
-  };
-
-  timetable.push(newClass);
-  saveTimetable(timetable);
+  });
 
   console.log(`\nSuccessfully added class: "${name}" (${days.join(', ')} at ${time})`);
-  printTimetableSummary(timetable);
+  timetableModel.printTimetableSummary();
 }
 
 function handleList() {
-  const timetable = loadTimetable();
-  printTimetableSummary(timetable);
+  timetableModel.printTimetableSummary();
 }
 
 function main() {
@@ -65,4 +51,8 @@ function main() {
   }
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { handleAdd, handleList };

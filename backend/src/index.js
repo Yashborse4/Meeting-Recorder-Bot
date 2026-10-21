@@ -3,7 +3,7 @@
  * CLI runner and module export for the Google Meet Recording Bot
  */
 
-const { MeetRecorderBot } = require('./meetBot');
+const { MeetRecorderBot } = require('./services/meetBot');
 const config = require('./config');
 
 async function main() {

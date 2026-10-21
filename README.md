@@ -259,22 +259,38 @@ The backend Express server exposes a full REST API for automation and integratio
 
 ```text
 Meeting-Recorder-Bot/
-├── backend/                         # Node.js backend & dashboard server
-│   ├── public/                      # Web dashboard frontend
-│   │   ├── index.html               # OLED black-themed dashboard HTML5
-│   │   ├── style.css                # Obsidian glassmorphic styling
+├── backend/                         # Node.js backend (MVC Architecture)
+│   ├── public/                      # [VIEW] Web dashboard frontend
+│   │   ├── index.html               # Monochrome black & white dashboard HTML5
+│   │   ├── style.css                # Obsidian high-contrast monochrome CSS
 │   │   └── app.js                   # Reactive UI controller & API client
 │   ├── src/
-│   │   ├── accountManager.js        # Google authentication & profile importer
-│   │   ├── browser.js               # Chromium lifecycle & CDP download config
-│   │   ├── config.js                # Central backend configuration
-│   │   ├── index.js                 # Standalone CLI bot runner
-│   │   ├── manageTimetable.js       # CLI helper for timetable entries
-│   │   ├── meetBot.js               # Google Meet automation & auto-leave rules
-│   │   ├── scheduler.js             # Automated timetable cron daemon
-│   │   ├── server.js                # Express dashboard server (Port 3000)
-│   │   ├── settingsManager.js       # Persistent configuration manager
-│   │   └── storage.js               # Recording download verification
+│   │   ├── config/                  # Central configuration & Chrome launch flags
+│   │   ├── models/                  # [MODEL] Timetable, settings, account, & recording data
+│   │   │   ├── timetableModel.js
+│   │   │   ├── settingsModel.js
+│   │   │   ├── accountModel.js
+│   │   │   └── recordingModel.js
+│   │   ├── controllers/             # [CONTROLLER] Request validation & responses
+│   │   │   ├── statusController.js
+│   │   │   ├── timetableController.js
+│   │   │   ├── recordingController.js
+│   │   │   ├── settingsController.js
+│   │   │   ├── accountController.js
+│   │   │   └── browserController.js
+│   │   ├── routes/                  # Express REST API routes mounted under /api
+│   │   │   ├── index.js
+│   │   │   └── ... (modular route definitions)
+│   │   ├── services/                # Core engines, Meet automation & scheduler daemon
+│   │   │   ├── meetBot.js
+│   │   │   ├── browserService.js
+│   │   │   ├── schedulerService.js
+│   │   │   └── storageService.js
+│   │   ├── utils/                   # Helpers: timeUtils (IST 12h/24h) & browserLauncher
+│   │   ├── app.js                   # Express application setup & middleware
+│   │   ├── server.js                # Server entry point (starts daemon on port 3000)
+│   │   ├── index.js                 # Standalone CLI meeting runner
+│   │   └── manageTimetable.js       # Standalone CLI timetable manager
 │   ├── package.json                 # Backend dependencies (Express, Puppeteer)
 │   ├── settings.example.json        # Default settings template
 │   └── timetable.example.json       # Sample timetable template
