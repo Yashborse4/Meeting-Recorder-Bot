@@ -17,6 +17,82 @@ let isDaemonRunning = false;
 let daemonInterval = null;
 const recordedToday = new Set(); // Prevents duplicate recordings on the same day
 
+/**
+ * Normalizes any time string (e.g. "02:30 PM", "2:30pm", "14:30") to standard "HH:MM" 24h format
+ */
+function normalizeTimeTo24(timeStr) {
+  if (!timeStr) return '09:00';
+  const match = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+  if (!match) return String(timeStr);
+  let [_, hStr, mStr, ampm] = match;
+  let h = parseInt(hStr, 10);
+  if (ampm) {
+    if (ampm.toUpperCase() === 'PM' && h < 12) h += 12;
+    if (ampm.toUpperCase() === 'AM' && h === 12) h = 0;
+  }
+  return `${String(h).padStart(2, '0')}:${mStr}`;
+}
+
+/**
+ * Formats "HH:MM" 24h into 12h Indian Standard Time with AM/PM (e.g. "02:30 PM IST")
+ */
+function formatTimeTo12IST(timeStr) {
+  if (!timeStr) return '--:--';
+  if (/am|pm/i.test(timeStr)) {
+    return timeStr.includes('IST') ? timeStr : `${timeStr} IST`;
+  }
+  const [hStr, mStr] = String(timeStr).split(':');
+  let h = parseInt(hStr, 10);
+  const m = mStr ? mStr.padStart(2, '0') : '00';
+  if (isNaN(h)) return timeStr;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${String(h).padStart(2, '0')}:${m} ${ampm} IST`;
+}
+
+/**
+ * Reliably returns current Indian Standard Time (IST, UTC+5:30 - Asia/Kolkata)
+ */
+function getISTDate() {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kolkata',
+    hour12: false,
+    weekday: 'short',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+  const parts = formatter.formatToParts(now);
+  const map = {};
+  for (const p of parts) map[p.type] = p.value;
+
+  const weekdayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const dayIdx = weekdayMap[map.weekday] ?? now.getDay();
+  const hours = parseInt(map.hour, 10) || 0;
+  const minutes = parseInt(map.minute, 10) || 0;
+  const hhmm = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const hours12 = hours % 12 || 12;
+  const time12 = `${String(hours12).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${ampm} IST`;
+
+  return {
+    dayIdx,
+    dayName: DAY_NAMES[dayIdx],
+    dayFullName: DAY_FULL_NAMES[dayIdx],
+    hours,
+    minutes,
+    hhmm,
+    time12,
+    isoDate: `${map.year}-${map.month}-${map.day}`,
+  };
+}
+
 function loadTimetable() {
   if (!fs.existsSync(config.TIMETABLE_FILE)) {
     try {
@@ -47,12 +123,16 @@ function addOrUpdateClass(classData) {
     ? classData.days.map((d) => d.toLowerCase())
     : [String(classData.days).toLowerCase()];
 
+  const normalizedTime = normalizeTimeTo24(classData.time);
+  const time12 = formatTimeTo12IST(normalizedTime);
+
   const entry = {
     id,
     name: classData.name || 'Untitled Class',
     link: classData.link || '',
     days: formattedDays,
-    time: classData.time || '09:00',
+    time: normalizedTime,
+    time12,
     duration: parseInt(classData.duration || '60', 10),
     enabled: classData.enabled !== false,
   };
@@ -120,9 +200,9 @@ function printTimetableSummary(timetable) {
 }
 
 function getNextUpcoming(timetable) {
-  const now = new Date();
-  const currentDayIdx = now.getDay();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const ist = getISTDate();
+  const currentDayIdx = ist.dayIdx;
+  const currentMinutes = ist.hours * 60 + ist.minutes;
 
   let closestDiff = Infinity;
   let nextClass = null;
@@ -130,7 +210,8 @@ function getNextUpcoming(timetable) {
   for (const item of timetable) {
     if (!item.enabled || !item.time || !item.days) continue;
 
-    const [hh, mm] = item.time.split(':').map(Number);
+    const normalizedTime = normalizeTimeTo24(item.time);
+    const [hh, mm] = normalizedTime.split(':').map(Number);
     const targetMinutes = hh * 60 + mm;
 
     for (const d of item.days) {
@@ -151,6 +232,8 @@ function getNextUpcoming(timetable) {
         closestDiff = totalDiffMinutes;
         nextClass = {
           ...item,
+          time: normalizedTime,
+          time12: item.time12 || formatTimeTo12IST(normalizedTime),
           day: DAY_FULL_NAMES[dayIdx],
           diffMinutes: totalDiffMinutes,
         };
@@ -162,8 +245,7 @@ function getNextUpcoming(timetable) {
 }
 
 function getStatus() {
-  const now = new Date();
-  const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const ist = getISTDate();
   const timetable = loadTimetable();
 
   let activeInfo = null;
@@ -182,8 +264,10 @@ function getStatus() {
     daemonRunning: isDaemonRunning,
     activeRecording: activeInfo,
     nextClass: getNextUpcoming(timetable),
-    currentTime: currentHHMM,
-    currentDay: DAY_FULL_NAMES[now.getDay()],
+    currentTime: ist.hhmm,
+    currentTime12: ist.time12,
+    currentDay: ist.dayFullName,
+    timezone: 'Asia/Kolkata (IST)',
     timetableCount: timetable.length,
     activeCount: timetable.filter((c) => c.enabled).length,
   };
@@ -255,24 +339,26 @@ async function checkAndTriggerSchedule() {
   if (activeBotInstance) return; // Busy recording, don't overlap
 
   const timetable = loadTimetable();
-  const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-  const currentDay = DAY_NAMES[now.getDay()];
-  const currentHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const ist = getISTDate();
+  const todayStr = ist.isoDate;
+  const currentDay = ist.dayName;
+  const currentHHMM = ist.hhmm;
 
   for (const item of timetable) {
     if (!item.enabled) continue;
 
     const itemDays = (Array.isArray(item.days) ? item.days : [item.days]).map((d) => d.toLowerCase());
     const isToday = itemDays.includes(currentDay) || itemDays.includes('all') || itemDays.includes('*');
+    const normalizedItemTime = normalizeTimeTo24(item.time);
 
-    if (isToday && item.time === currentHHMM) {
-      const sessionKey = `${item.id || item.name}_${todayStr}_${item.time}`;
+    if (isToday && normalizedItemTime === currentHHMM) {
+      const sessionKey = `${item.id || item.name}_${todayStr}_${normalizedItemTime}`;
 
       if (!recordedToday.has(sessionKey)) {
         recordedToday.add(sessionKey);
+        const displayTime = item.time12 || formatTimeTo12IST(normalizedItemTime);
         console.log('\n========================================================================');
-        console.log(`[Scheduler] ⏰ TIME FOR CLASS: "${item.name}"!`);
+        console.log(`[Scheduler] ⏰ TIME FOR CLASS: "${item.name}" (${displayTime})!`);
         console.log(`[Scheduler] Link: ${item.link}`);
         console.log(`[Scheduler] Duration: ${item.duration || 60} minutes`);
         console.log('========================================================================\n');

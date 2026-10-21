@@ -108,7 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const hrs = Math.floor(data.nextClass.diffMinutes / 60);
         const mins = data.nextClass.diffMinutes % 60;
         nextClassCountdown.textContent = hrs > 0 ? `In ${hrs}h ${mins}m` : `In ${mins}m`;
-        nextClassMeta.textContent = `${data.nextClass.day} at ${data.nextClass.time} (${data.nextClass.duration} mins)`;
+        nextClassMeta.textContent = `${data.nextClass.day} at ${formatTime12Plain(data.nextClass.time12 || data.nextClass.time)} (${data.nextClass.duration} mins)`;
 
         if (data.nextClass.link) {
           nextClassLink.href = data.nextClass.link;
@@ -182,6 +182,34 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function formatTime12(timeStr) {
+    if (!timeStr) return '--:--';
+    if (typeof timeStr === 'string' && /am|pm/i.test(timeStr)) {
+      return timeStr.includes('IST') ? timeStr : `${timeStr} <span class="tz-badge">IST</span>`;
+    }
+    const [hStr, mStr] = String(timeStr).split(':');
+    let h = parseInt(hStr, 10);
+    const m = mStr ? mStr.padStart(2, '0') : '00';
+    if (isNaN(h)) return timeStr;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${String(h).padStart(2, '0')}:${m} ${ampm} <span class="tz-badge">IST</span>`;
+  }
+
+  function formatTime12Plain(timeStr) {
+    if (!timeStr) return '--:--';
+    if (typeof timeStr === 'string' && /am|pm/i.test(timeStr)) {
+      return timeStr.includes('IST') ? timeStr : `${timeStr} IST`;
+    }
+    const [hStr, mStr] = String(timeStr).split(':');
+    let h = parseInt(hStr, 10);
+    const m = mStr ? mStr.padStart(2, '0') : '00';
+    if (isNaN(h)) return timeStr;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${String(h).padStart(2, '0')}:${m} ${ampm} IST`;
+  }
+
   function renderTimetable() {
     const daysOrder = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
@@ -224,7 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             <div class="class-card-time">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              <span>${item.time}</span>
+              <span>${formatTime12(item.time12 || item.time)}</span>
               <span class="class-duration-badge">(${item.duration || 60} mins)</span>
             </div>
 
@@ -275,6 +303,109 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // -------------------------------------------------------------
+  // INDIAN STANDARD TIME (IST) & 12-HOUR AM/PM CONTROLS
+  // -------------------------------------------------------------
+  const timeHour = document.getElementById('time-hour');
+  const timeMinute = document.getElementById('time-minute');
+  const timeAmpm = document.getElementById('time-ampm');
+  const btnAmpmList = document.querySelectorAll('.btn-ampm');
+  const classTimeHidden = document.getElementById('class-time');
+  const timePreviewText = document.getElementById('time-preview-text');
+  const time24hHint = document.getElementById('time-24h-hint');
+  const liveIstClock = document.getElementById('live-ist-clock');
+
+  // Populate all 60 minutes (00 - 59)
+  if (timeMinute) {
+    timeMinute.innerHTML = Array.from({ length: 60 }, (_, i) => {
+      const v = String(i).padStart(2, '0');
+      return `<option value="${v}">${v}</option>`;
+    }).join('');
+  }
+
+  function updateLiveISTClock() {
+    if (!liveIstClock) return;
+    try {
+      const now = new Date();
+      const str = new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour12: true,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }).format(now);
+      liveIstClock.textContent = `${str.toUpperCase()} IST`;
+    } catch {}
+  }
+  setInterval(updateLiveISTClock, 1000);
+  updateLiveISTClock();
+
+  function syncTimeToHidden() {
+    if (!timeHour || !timeMinute || !timeAmpm || !classTimeHidden) return;
+    let h = parseInt(timeHour.value, 10) || 12;
+    const m = (timeMinute.value || '00').padStart(2, '0');
+    const ampm = timeAmpm.value || 'AM';
+
+    let h24 = h;
+    if (ampm === 'PM' && h < 12) h24 = h + 12;
+    if (ampm === 'AM' && h === 12) h24 = 0;
+
+    const hh24Str = String(h24).padStart(2, '0');
+    classTimeHidden.value = `${hh24Str}:${m}`;
+
+    if (timePreviewText) {
+      timePreviewText.textContent = `${timeHour.value}:${m} ${ampm} IST`;
+    }
+    if (time24hHint) {
+      time24hHint.textContent = `(24-hour: ${hh24Str}:${m})`;
+    }
+  }
+
+  function setTimeFrom24(timeStr) {
+    if (!timeHour || !timeMinute || !timeAmpm) return;
+    let h = 9;
+    let m = 0;
+    let ampm = 'AM';
+
+    if (timeStr) {
+      const match = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+      if (match) {
+        let [_, hStr, mStr, rawAmpm] = match;
+        let rawH = parseInt(hStr, 10);
+        m = parseInt(mStr, 10) || 0;
+        if (rawAmpm) {
+          ampm = rawAmpm.toUpperCase();
+          h = rawH % 12 || 12;
+        } else {
+          ampm = rawH >= 12 ? 'PM' : 'AM';
+          h = rawH % 12 || 12;
+        }
+      }
+    }
+
+    timeHour.value = String(h).padStart(2, '0');
+    timeMinute.value = String(m).padStart(2, '0');
+    timeAmpm.value = ampm;
+
+    btnAmpmList.forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.ampm === ampm);
+    });
+
+    syncTimeToHidden();
+  }
+
+  btnAmpmList.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      btnAmpmList.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      if (timeAmpm) timeAmpm.value = btn.dataset.ampm;
+      syncTimeToHidden();
+    });
+  });
+
+  timeHour?.addEventListener('change', syncTimeToHidden);
+  timeMinute?.addEventListener('change', syncTimeToHidden);
+
   // Modal open/close
   btnOpenAddModal.addEventListener('click', () => {
     isEditingId = null;
@@ -283,6 +414,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('class-id').value = '';
     document.getElementById('class-duration').value = '60';
     document.getElementById('class-enabled').checked = true;
+    setTimeFrom24('09:00 AM');
     classModal.style.display = 'flex';
   });
 
@@ -379,7 +511,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('class-id').value = item.id;
     document.getElementById('class-name').value = item.name;
     document.getElementById('class-link').value = item.link;
-    document.getElementById('class-time').value = item.time;
+    setTimeFrom24(item.time12 || item.time);
     document.getElementById('class-duration').value = item.duration || 60;
     document.getElementById('class-enabled').checked = item.enabled !== false;
 

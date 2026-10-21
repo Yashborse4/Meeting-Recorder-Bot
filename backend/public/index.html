@@ -40,6 +40,12 @@
           </div>
         </div>
 
+        <!-- Live Indian Time (IST) Clock Pill -->
+        <div class="ist-clock-pill" title="Indian Standard Time (IST - Asia/Kolkata)">
+          <span class="tz-flag">🇮🇳</span>
+          <span id="live-ist-clock" class="ist-time-text">--:-- -- IST</span>
+        </div>
+
         <div id="scheduler-pill" class="status-pill active">
           <span class="status-indicator"></span>
           <span id="scheduler-status-text">Scheduler Running</span>
@@ -431,14 +437,80 @@
           </div>
         </div>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label for="class-time">Start Time (24-Hour)</label>
-            <input type="time" id="class-time" required>
+        <div class="form-group time-picker-section">
+          <div class="time-header-row">
+            <label>Class Start Time (Indian Standard Time)</label>
+            <span class="tz-badge-pill">🇮🇳 IST (UTC+5:30)</span>
           </div>
-          <div class="form-group">
-            <label for="class-duration">Duration (Minutes)</label>
-            <input type="number" id="class-duration" value="60" min="5" max="360" required>
+
+          <div class="time-picker-grid">
+            <!-- Hour Selector -->
+            <div class="time-col">
+              <label class="time-sublabel" for="time-hour">Hour (1-12)</label>
+              <select id="time-hour" class="select-styled" required>
+                <option value="12">12</option>
+                <option value="01">01</option>
+                <option value="02">02</option>
+                <option value="03">03</option>
+                <option value="04">04</option>
+                <option value="05">05</option>
+                <option value="06">06</option>
+                <option value="07">07</option>
+                <option value="08">08</option>
+                <option value="09" selected>09</option>
+                <option value="10">10</option>
+                <option value="11">11</option>
+              </select>
+            </div>
+
+            <div class="time-separator">:</div>
+
+            <!-- Minute Selector -->
+            <div class="time-col">
+              <label class="time-sublabel" for="time-minute">Minute</label>
+              <select id="time-minute" class="select-styled" required>
+                <option value="00" selected>00</option>
+                <option value="05">05</option>
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="20">20</option>
+                <option value="25">25</option>
+                <option value="30">30</option>
+                <option value="35">35</option>
+                <option value="40">40</option>
+                <option value="45">45</option>
+                <option value="50">50</option>
+                <option value="55">55</option>
+              </select>
+            </div>
+
+            <!-- AM / PM Selector -->
+            <div class="time-col ampm-col">
+              <label class="time-sublabel">AM / PM</label>
+              <div class="ampm-toggle-group">
+                <button type="button" class="btn-ampm active" data-ampm="AM">AM</button>
+                <button type="button" class="btn-ampm" data-ampm="PM">PM</button>
+              </div>
+              <input type="hidden" id="time-ampm" value="AM">
+            </div>
+
+            <!-- Duration Selector -->
+            <div class="time-col duration-col">
+              <label class="time-sublabel" for="class-duration">Duration</label>
+              <div class="input-with-unit">
+                <input type="number" id="class-duration" value="60" min="5" max="360" required>
+                <span class="unit-text">mins</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Hidden input keeping synchronized 24-hr time for backend scheduler -->
+          <input type="hidden" id="class-time" value="09:00">
+
+          <div class="time-preview-banner">
+            <span class="preview-label">Selected Class Time:</span>
+            <strong id="time-preview-text" class="preview-value">09:00 AM IST</strong>
+            <span id="time-24h-hint" class="preview-hint">(24-hour: 09:00)</span>
           </div>
         </div>
 
