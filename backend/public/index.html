@@ -234,7 +234,7 @@
 
             <div class="form-group flex-3">
               <label for="subject-input-link">Google Meet URL</label>
-              <input type="url" id="subject-input-link" placeholder="https://meet.google.com/abc-defg-hij" required autocomplete="off">
+              <input type="text" id="subject-input-link" placeholder="https://meet.google.com/abc-defg-hij" required autocomplete="off">
             </div>
           </div>
 
@@ -623,7 +623,7 @@
     </section>
   </main>
 
-  <!-- STREAMLINED CLUTTER-FREE SCHEDULE CLASS MODAL -->
+    <!-- STREAMLINED CLUTTER-FREE SCHEDULE CLASS MODAL -->
   <div id="class-modal" class="modal-backdrop" style="display: none;">
     <div class="modal-window modal-window-clean">
       <div class="modal-header">
@@ -641,64 +641,43 @@
 
       <form id="class-form">
         <input type="hidden" id="class-id">
-        <input type="hidden" id="class-name">
-        <input type="hidden" id="class-link">
 
-        <!-- STEP 1: Select Class from Catalog -->
+        <!-- 1. Quick-Select from Catalog or Custom -->
         <div class="form-group">
           <div class="label-with-hint">
-            <label for="schedule-class-select">1. Select Class / Meeting Variety</label>
+            <label for="schedule-class-select">1. Quick-Select Saved Class Variety</label>
             <a href="javascript:void(0)" id="btn-modal-manage-classes" class="field-link-action">
-              + Manage / Add Variety
+              📚 Manage / Add Varieties in Catalog
             </a>
           </div>
-          <select id="schedule-class-select" class="select-styled-lg" required>
+          <select id="schedule-class-select" class="select-styled-lg">
             <!-- Populated dynamically: Advance Engineering Math, Robotics, etc. -->
           </select>
+        </div>
 
-          <!-- Linked Google Meet URL Info Card -->
-          <div id="schedule-link-preview" class="schedule-link-preview">
-            <div class="link-preview-left">
-              <span class="preview-dot" id="schedule-dot-indicator"></span>
-              <span class="preview-url-text" id="schedule-link-text">https://meet.google.com/...</span>
-            </div>
-            <div class="link-preview-actions">
-              <button type="button" id="btn-copy-preview-link" class="btn-icon-xs" title="Copy Google Meet link">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                Copy
-              </button>
-              <a id="schedule-link-test-btn" href="#" target="_blank" class="btn-icon-xs" title="Test Google Meet link in new tab">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
-                Test Link
-              </a>
-            </div>
+        <!-- 2. Class Name & Google Meet Link (Always Visible & Editable) -->
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label for="class-name">Class / Meeting Name <span class="required-star">*</span></label>
+            <input type="text" id="class-name" class="input-styled-lg" placeholder="e.g. Advance Engineering Math, Robotics" required autocomplete="off">
           </div>
 
-          <!-- Quick Inline Creator Drawer (if user selects "+ Add New Class..." or clicks action) -->
-          <div id="inline-create-class-panel" class="inline-create-panel" style="display: none;">
-            <div class="inline-panel-header">
-              <span>+ Quick Register New Class Variety</span>
-              <button type="button" id="btn-close-inline-panel" class="btn-close-xs">&times;</button>
-            </div>
-            <div class="form-row" style="margin-bottom: 8px;">
-              <div class="form-group flex-2">
-                <input type="text" id="inline-class-name" placeholder="Class Name (e.g. Robotics, AEM)" autocomplete="off">
-              </div>
-              <div class="form-group flex-3">
-                <input type="url" id="inline-class-link" placeholder="Google Meet link (https://meet.google.com/...)" autocomplete="off">
+          <div class="form-group flex-3">
+            <div class="label-with-hint">
+              <label for="class-link">Google Meet URL <span class="required-star">*</span></label>
+              <div class="link-quick-actions">
+                <button type="button" id="btn-paste-link" class="btn-link-action" title="Paste from clipboard">📋 Paste</button>
+                <a id="schedule-link-test-btn" href="#" target="_blank" class="btn-link-action" title="Test link in new tab">🔗 Test Link</a>
               </div>
             </div>
-            <div style="display: flex; justify-content: flex-end; gap: 8px;">
-              <button type="button" id="btn-inline-cancel" class="btn-secondary btn-sm">Cancel</button>
-              <button type="button" id="btn-inline-save-class" class="btn-primary btn-sm">+ Save to Catalog & Select</button>
-            </div>
+            <input type="text" id="class-link" class="input-styled-lg" placeholder="https://meet.google.com/abc-defg-hij" required autocomplete="off">
           </div>
         </div>
 
-        <!-- STEP 2: Select Weekday(s) -->
+        <!-- 3. Select Weekday(s) -->
         <div class="form-group">
           <div class="label-with-hint">
-            <label>2. Select Day(s) of Week</label>
+            <label>2. Select Day(s) of Week <span class="required-star">*</span></label>
             <div class="day-quick-presets">
               <button type="button" class="btn-preset-sm" onclick="setScheduleDaysPreset('today')">Today</button>
               <button type="button" class="btn-preset-sm" onclick="setScheduleDaysPreset('weekdays')">Mon - Fri</button>
@@ -739,7 +718,7 @@
           </div>
         </div>
 
-        <!-- STEP 3 & 4: Select Timing & Duration ("only select which class for how much time") -->
+        <!-- 4. Select Timing & Duration -->
         <div class="form-row time-duration-row">
           <div class="form-group flex-1">
             <div class="label-with-hint">
@@ -786,12 +765,20 @@
           </div>
         </div>
 
-        <div class="form-group checkbox-group" style="margin-top: 14px;">
-          <label class="switch-control">
-            <input type="checkbox" id="class-enabled" checked>
-            <span class="switch-slider"></span>
+        <!-- Options: Sync to Catalog & Enable automated recording -->
+        <div class="modal-options-row">
+          <label class="checkbox-item" title="Remember this class and link in your Class Variety Catalog for future use">
+            <input type="checkbox" id="class-sync-catalog" checked>
+            <span>Save / update in Class Variety Catalog</span>
           </label>
-          <span class="switch-label">Enable automated recording for this class</span>
+
+          <label class="switch-control-wrap" title="Enable automated recording for this class">
+            <label class="switch-control">
+              <input type="checkbox" id="class-enabled" checked>
+              <span class="switch-slider"></span>
+            </label>
+            <span class="switch-label">Active Recording</span>
+          </label>
         </div>
 
         <div class="modal-footer">

@@ -37,16 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Streamlined Modal Elements
   const scheduleClassSelect = document.getElementById('schedule-class-select');
-  const scheduleLinkText = document.getElementById('schedule-link-text');
   const scheduleLinkTestBtn = document.getElementById('schedule-link-test-btn');
-  const scheduleDotIndicator = document.getElementById('schedule-dot-indicator');
-  const btnCopyPreviewLink = document.getElementById('btn-copy-preview-link');
-  const inlineCreateClassPanel = document.getElementById('inline-create-class-panel');
-  const inlineClassName = document.getElementById('inline-class-name');
-  const inlineClassLink = document.getElementById('inline-class-link');
-  const btnInlineSaveClass = document.getElementById('btn-inline-save-class');
-  const btnInlineCancel = document.getElementById('btn-inline-cancel');
-  const btnCloseInlinePanel = document.getElementById('btn-close-inline-panel');
   const scheduleTimeNative = document.getElementById('schedule-time-native');
   const scheduleDurationInput = document.getElementById('schedule-duration-input');
   const schedPreviewTitle = document.getElementById('sched-preview-title');
@@ -55,6 +46,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const classNameInput = document.getElementById('class-name');
   const classLinkInput = document.getElementById('class-link');
   const classIdInput = document.getElementById('class-id');
+  const classSyncCatalog = document.getElementById('class-sync-catalog');
+  const btnPasteLink = document.getElementById('btn-paste-link');
 
   // Subjects / Catalog Screen Elements
   const subjectsGrid = document.getElementById('subjects-grid');
@@ -505,17 +498,30 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
 
     const name = (subjectInputName?.value || '').trim();
-    const link = (subjectInputLink?.value || '').trim();
+    let link = (subjectInputLink?.value || '').trim();
     const defaultDuration = parseInt(subjectInputDuration?.value || '60', 10);
     const color = subjectInputColor?.value || '#6366f1';
     const id = subjectEditId?.value || undefined;
 
     if (!name) {
       showToast('Please enter a class name.', 'error');
+      subjectInputName?.focus();
       return;
     }
-    if (!link || !link.includes('meet.google.com')) {
-      showToast('Please provide a valid Google Meet link.', 'error');
+
+    if (!link) {
+      showToast('Please provide a Google Meet link.', 'error');
+      subjectInputLink?.focus();
+      return;
+    }
+
+    if (!link.startsWith('http://') && !link.startsWith('https://')) {
+      link = 'https://' + link;
+    }
+
+    if (!link.toLowerCase().includes('meet.google.com')) {
+      showToast('Please provide a valid Google Meet link (e.g. https://meet.google.com/abc-defg-hij).', 'error');
+      subjectInputLink?.focus();
       return;
     }
 
@@ -672,9 +678,13 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
 
           <div class="class-card-actions">
-            <button type="button" class="btn-card-edit-prominent" onclick="editClass('${item.id}')" title="Edit timing or days for this class">
+            <button type="button" class="btn-card-edit-prominent" onclick="editClass('${item.id}')" title="Edit class name, link, days, or timing">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              Edit Schedule
+              Edit
+            </button>
+            <button type="button" class="btn-card-duplicate" onclick="duplicateClass('${item.id}')" title="Duplicate this class for another slot">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Clone
             </button>
             <div style="display: flex; gap: 8px;">
               <button type="button" class="btn-card-record" onclick="triggerImmediate('${escapeHtml(item.link)}', ${item.duration || 60}, '${escapeHtml(item.name)}')" title="Launch and record this class now">
@@ -704,64 +714,85 @@ document.addEventListener('DOMContentLoaded', () => {
   // -------------------------------------------------------------
   // STREAMLINED CLUTTER-FREE SCHEDULING (MODAL)
   // -------------------------------------------------------------
-  function populateScheduleClassDropdown(selectedId = null) {
+  function populateScheduleClassDropdown(selectedIdOrName = null) {
     if (!scheduleClassSelect) return;
 
-    if (subjectsData.length === 0) {
-      scheduleClassSelect.innerHTML = `
-        <option value="__new__">+ Register New Class Variety...</option>
-      `;
-      syncModalSelectedSubject();
-      return;
-    }
+    let html = `<option value="">-- Pick from Saved Class Varieties (or type below) --</option>`;
 
-    let html = subjectsData.map((s) => {
-      const isSelected = selectedId === s.id ? 'selected' : '';
-      return `<option value="${s.id}" ${isSelected}>${escapeHtml(s.name)}</option>`;
-    }).join('');
+    subjectsData.forEach((s) => {
+      const isSelected =
+        selectedIdOrName &&
+        (selectedIdOrName === s.id ||
+          String(selectedIdOrName).trim().toLowerCase() === (s.name || '').trim().toLowerCase());
+      html += `<option value="${s.id}" ${isSelected ? 'selected' : ''}>${escapeHtml(s.name)}</option>`;
+    });
 
-    html += `<option value="__new__">➕ Add New Class Variety...</option>`;
+    html += `<option value="__custom__">✏️ Custom / Type Manual Class...</option>`;
     scheduleClassSelect.innerHTML = html;
 
-    if (selectedId) {
-      scheduleClassSelect.value = selectedId;
-    } else if (!scheduleClassSelect.value) {
-      scheduleClassSelect.selectedIndex = 0;
+    if (selectedIdOrName) {
+      const match = subjectsData.find(
+        (s) =>
+          s.id === selectedIdOrName ||
+          (s.name && s.name.trim().toLowerCase() === String(selectedIdOrName).trim().toLowerCase())
+      );
+      if (match) {
+        scheduleClassSelect.value = match.id;
+      } else {
+        scheduleClassSelect.value = '__custom__';
+      }
+    } else {
+      scheduleClassSelect.value = '';
     }
-
-    syncModalSelectedSubject();
   }
 
-  function syncModalSelectedSubject() {
-    const val = scheduleClassSelect?.value;
-    if (val === '__new__') {
-      if (inlineCreateClassPanel) inlineCreateClassPanel.style.display = 'block';
-      if (scheduleLinkText) scheduleLinkText.textContent = 'Enter Meet link below';
-      if (classNameInput) classNameInput.value = '';
-      if (classLinkInput) classLinkInput.value = '';
-      updateSchedulePreviewSummary();
+  // Handle picking a variety from dropdown
+  scheduleClassSelect?.addEventListener('change', () => {
+    const val = scheduleClassSelect.value;
+    if (!val || val === '__custom__') {
+      classNameInput?.focus();
       return;
     }
-
-    if (inlineCreateClassPanel) inlineCreateClassPanel.style.display = 'none';
 
     const subj = subjectsData.find((s) => s.id === val);
     if (subj) {
       if (classNameInput) classNameInput.value = subj.name;
-      if (classLinkInput) classLinkInput.value = subj.link;
-      if (scheduleLinkText) scheduleLinkText.textContent = subj.link || 'No Meet link configured';
-      if (scheduleLinkTestBtn) scheduleLinkTestBtn.href = subj.link || '#';
-      if (scheduleDotIndicator) scheduleDotIndicator.style.background = subj.color || '#10b981';
-
-      if (!isEditingId && scheduleDurationInput && subj.defaultDuration) {
+      if (classLinkInput) {
+        classLinkInput.value = subj.link;
+        if (scheduleLinkTestBtn) scheduleLinkTestBtn.href = subj.link || '#';
+      }
+      if (scheduleDurationInput && subj.defaultDuration) {
         setScheduleDuration(subj.defaultDuration);
       }
+      updateSchedulePreviewSummary();
     }
+  });
 
-    updateSchedulePreviewSummary();
-  }
+  // Keep test link and preview in sync when typing link
+  classLinkInput?.addEventListener('input', () => {
+    let link = (classLinkInput.value || '').trim();
+    if (link && !link.startsWith('http://') && !link.startsWith('https://')) {
+      link = 'https://' + link;
+    }
+    if (scheduleLinkTestBtn) {
+      scheduleLinkTestBtn.href = link || '#';
+    }
+  });
 
-  scheduleClassSelect?.addEventListener('change', syncModalSelectedSubject);
+  // Paste from clipboard helper
+  btnPasteLink?.addEventListener('click', async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        classLinkInput.value = text.trim();
+        classLinkInput.dispatchEvent(new Event('input'));
+        showToast('Link pasted from clipboard!');
+      }
+    } catch {
+      classLinkInput?.focus();
+      showToast('Clipboard access denied. Please paste manually.', 'error');
+    }
+  });
 
   window.setScheduleTime = function (hhmm) {
     if (!scheduleTimeNative) return;
@@ -809,7 +840,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateSchedulePreviewSummary() {
     if (!schedPreviewTitle || !schedPreviewTiming) return;
 
-    const subjectName = classNameInput?.value || 'Selected Class';
+    const subjectName = (classNameInput?.value || '').trim() || 'Selected Class';
     const checkedDays = Array.from(document.querySelectorAll('input[name="sched_day"]:checked')).map((cb) => cb.value);
 
     let daysText = 'No days selected';
@@ -831,32 +862,41 @@ document.addEventListener('DOMContentLoaded', () => {
     schedPreviewTiming.textContent = `${daysText} at ${time12Str} (${durationVal} mins)`;
   }
 
-  // Update summary on time or duration input typing
+  // Update summary on typing
+  classNameInput?.addEventListener('input', () => {
+    updateSchedulePreviewSummary();
+    const typed = (classNameInput.value || '').trim().toLowerCase();
+    const match = subjectsData.find((s) => (s.name || '').trim().toLowerCase() === typed);
+    if (match) {
+      scheduleClassSelect.value = match.id;
+    } else if (typed) {
+      scheduleClassSelect.value = '__custom__';
+    } else {
+      scheduleClassSelect.value = '';
+    }
+  });
   scheduleTimeNative?.addEventListener('input', updateSchedulePreviewSummary);
   scheduleDurationInput?.addEventListener('input', updateSchedulePreviewSummary);
   document.querySelectorAll('input[name="sched_day"]').forEach((cb) => {
     cb.addEventListener('change', updateSchedulePreviewSummary);
   });
 
-  window.openScheduleModal = function (day = null, subjectId = null, editingItem = null) {
-    isEditingId = editingItem ? editingItem.id : null;
-    if (inlineCreateClassPanel) inlineCreateClassPanel.style.display = 'none';
-
-    if (editingItem) {
+  window.openScheduleModal = function (day = null, subjectId = null, editingItem = null, isDuplicate = false) {
+    if (editingItem && !isDuplicate) {
+      // EDITING AN EXISTING TIMETABLE SLOT
+      isEditingId = editingItem.id;
       if (modalTitle) modalTitle.textContent = 'Edit Scheduled Class';
       const sub = document.getElementById('modal-subtitle');
-      if (sub) sub.textContent = `Update timing, days, or duration for "${editingItem.name}"`;
+      if (sub) sub.textContent = `Update class name, Meet link, days, or timing for "${editingItem.name}"`;
       if (btnSaveClassText) btnSaveClassText.textContent = 'Save Changes';
 
       if (classIdInput) classIdInput.value = editingItem.id;
       if (classNameInput) classNameInput.value = editingItem.name;
       if (classLinkInput) classLinkInput.value = editingItem.link;
       if (classEnabledInput) classEnabledInput.checked = editingItem.enabled !== false;
+      if (classSyncCatalog) classSyncCatalog.checked = true;
 
-      const matched = subjectsData.find(
-        (s) => (s.name || '').trim().toLowerCase() === (editingItem.name || '').trim().toLowerCase()
-      );
-      populateScheduleClassDropdown(matched ? matched.id : null);
+      populateScheduleClassDropdown(editingItem.name);
 
       const itemDays = (Array.isArray(editingItem.days) ? editingItem.days : [editingItem.days]).map((d) =>
         String(d).toLowerCase().slice(0, 3)
@@ -867,16 +907,60 @@ document.addEventListener('DOMContentLoaded', () => {
 
       setScheduleTime(editingItem.time || '10:00');
       setScheduleDuration(editingItem.duration || 60);
+    } else if (editingItem && isDuplicate) {
+      // DUPLICATING AN EXISTING SLOT
+      isEditingId = null;
+      if (modalTitle) modalTitle.textContent = 'Duplicate Class Schedule';
+      const sub = document.getElementById('modal-subtitle');
+      if (sub) sub.textContent = `Clone "${editingItem.name}" with a new day or time`;
+      if (btnSaveClassText) btnSaveClassText.textContent = 'Add to Timetable';
+
+      if (classIdInput) classIdInput.value = '';
+      if (classNameInput) classNameInput.value = editingItem.name;
+      if (classLinkInput) classLinkInput.value = editingItem.link;
+      if (classEnabledInput) classEnabledInput.checked = true;
+      if (classSyncCatalog) classSyncCatalog.checked = false;
+
+      populateScheduleClassDropdown(editingItem.name);
+
+      const targetDay = day && day !== 'all' ? day.toLowerCase().slice(0, 3) : null;
+      const itemDays = (Array.isArray(editingItem.days) ? editingItem.days : [editingItem.days]).map((d) =>
+        String(d).toLowerCase().slice(0, 3)
+      );
+      document.querySelectorAll('input[name="sched_day"]').forEach((cb) => {
+        cb.checked = targetDay ? cb.value === targetDay : itemDays.includes(cb.value);
+      });
+
+      setScheduleTime(editingItem.time || '10:00');
+      setScheduleDuration(editingItem.duration || 60);
     } else {
+      // ADDING A BRAND NEW CLASS
+      isEditingId = null;
       if (modalTitle) modalTitle.textContent = 'Schedule a Class';
       const sub = document.getElementById('modal-subtitle');
-      if (sub) sub.textContent = 'Select class, choose day and time, and set duration';
+      if (sub) sub.textContent = 'Pick class variety or type details, choose days and timing';
       if (btnSaveClassText) btnSaveClassText.textContent = 'Schedule Class';
 
       if (classIdInput) classIdInput.value = '';
       if (classEnabledInput) classEnabledInput.checked = true;
+      if (classSyncCatalog) classSyncCatalog.checked = true;
 
       populateScheduleClassDropdown(subjectId);
+
+      const targetSubj = subjectId
+        ? subjectsData.find((s) => s.id === subjectId)
+        : (subjectsData.length > 0 ? subjectsData[0] : null);
+
+      if (targetSubj) {
+        if (classNameInput) classNameInput.value = targetSubj.name;
+        if (classLinkInput) classLinkInput.value = targetSubj.link;
+        if (scheduleClassSelect) scheduleClassSelect.value = targetSubj.id;
+        setScheduleDuration(targetSubj.defaultDuration || 60);
+      } else {
+        if (classNameInput) classNameInput.value = '';
+        if (classLinkInput) classLinkInput.value = '';
+        setScheduleDuration(60);
+      }
 
       const targetDay = day && day !== 'all' ? day.toLowerCase().slice(0, 3) : null;
       document.querySelectorAll('input[name="sched_day"]').forEach((cb) => {
@@ -888,8 +972,13 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       setScheduleTime('10:00');
-      setScheduleDuration(60);
     }
+
+    let currentLink = (classLinkInput?.value || '').trim();
+    if (currentLink && !currentLink.startsWith('http://') && !currentLink.startsWith('https://')) {
+      currentLink = 'https://' + currentLink;
+    }
+    if (scheduleLinkTestBtn) scheduleLinkTestBtn.href = currentLink || '#';
 
     updateSchedulePreviewSummary();
     if (classModal) {
@@ -909,58 +998,6 @@ document.addEventListener('DOMContentLoaded', () => {
   btnCancelModal?.addEventListener('click', closeModal);
   classModal?.addEventListener('click', (e) => {
     if (e.target === classModal) closeModal();
-  });
-
-  // Inline Quick Class Registration
-  btnInlineSaveClass?.addEventListener('click', async () => {
-    const name = (inlineClassName?.value || '').trim();
-    const link = (inlineClassLink?.value || '').trim();
-
-    if (!name) {
-      showToast('Please enter a class name.', 'error');
-      return;
-    }
-    if (!link || !link.includes('meet.google.com')) {
-      showToast('Please enter a valid Google Meet link.', 'error');
-      return;
-    }
-
-    try {
-      const res = await fetch('/api/subjects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, link, defaultDuration: 60 }),
-      });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error);
-
-      showToast(`Class "${name}" registered and selected!`);
-      await fetchSubjects();
-      populateScheduleClassDropdown(data.subject.id);
-      if (inlineCreateClassPanel) inlineCreateClassPanel.style.display = 'none';
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
-
-  btnInlineCancel?.addEventListener('click', () => {
-    if (inlineCreateClassPanel) inlineCreateClassPanel.style.display = 'none';
-    if (scheduleClassSelect && scheduleClassSelect.options.length > 0) {
-      scheduleClassSelect.selectedIndex = 0;
-      syncModalSelectedSubject();
-    }
-  });
-
-  btnCloseInlinePanel?.addEventListener('click', () => {
-    if (inlineCreateClassPanel) inlineCreateClassPanel.style.display = 'none';
-  });
-
-  btnCopyPreviewLink?.addEventListener('click', () => {
-    const link = classLinkInput?.value;
-    if (link) {
-      navigator.clipboard.writeText(link);
-      showToast('Google Meet link copied to clipboard!');
-    }
   });
 
   btnQuickManageSubjects?.addEventListener('click', () => {
@@ -991,17 +1028,31 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
 
     const subjectName = (classNameInput?.value || '').trim();
-    const meetLink = (classLinkInput?.value || '').trim();
+    let meetLink = (classLinkInput?.value || '').trim();
     const timeVal = scheduleTimeNative?.value || '10:00';
     const durationVal = parseInt(scheduleDurationInput?.value || '60', 10);
     const enabledVal = classEnabledInput?.checked !== false;
 
     if (!subjectName) {
-      showToast('Please select or enter a class name.', 'error');
+      showToast('Please enter a class / meeting name.', 'error');
+      classNameInput?.focus();
       return;
     }
-    if (!meetLink || !meetLink.includes('meet.google.com')) {
-      showToast('Please enter a valid Google Meet link.', 'error');
+
+    if (!meetLink) {
+      showToast('Please enter a Google Meet link.', 'error');
+      classLinkInput?.focus();
+      return;
+    }
+
+    // Auto-prepend https:// if missing
+    if (!meetLink.startsWith('http://') && !meetLink.startsWith('https://')) {
+      meetLink = 'https://' + meetLink;
+    }
+
+    if (!meetLink.toLowerCase().includes('meet.google.com')) {
+      showToast('Please enter a valid Google Meet link (e.g. https://meet.google.com/abc-defg-hij)', 'error');
+      classLinkInput?.focus();
       return;
     }
 
@@ -1030,12 +1081,30 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       if (!data.ok) throw new Error(data.error);
 
-      showToast(`Schedule for "${subjectName}" saved!`);
+      // If sync to catalog is checked, register/update in subjects directory too
+      if (classSyncCatalog?.checked) {
+        try {
+          await fetch('/api/subjects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: subjectName,
+              link: meetLink,
+              defaultDuration: durationVal,
+            }),
+          });
+        } catch (syncErr) {
+          console.warn('[App] Could not sync to catalog:', syncErr);
+        }
+      }
+
+      showToast(isEditingId ? `Changes to "${subjectName}" saved!` : `Class "${subjectName}" scheduled!`);
       closeModal();
       await fetchTimetable();
+      await fetchSubjects();
       await fetchStatus();
     } catch (err) {
-      showToast(err.message, 'error');
+      showToast(err.message || 'Failed to save class schedule', 'error');
     }
   });
 
@@ -1068,16 +1137,13 @@ document.addEventListener('DOMContentLoaded', () => {
   window.duplicateClass = function (id) {
     const item = timetableData.find((c) => c.id === id);
     if (!item) return;
-    openScheduleModal(currentDayFilter, null, item);
-    if (classIdInput) classIdInput.value = '';
-    if (modalTitle) modalTitle.textContent = `Schedule "${item.name}"`;
-    if (btnSaveClassText) btnSaveClassText.textContent = 'Add to Timetable';
+    openScheduleModal(currentDayFilter, null, item, true);
   };
 
   window.editClass = function (id) {
     const item = timetableData.find((c) => c.id === id);
     if (!item) return;
-    openScheduleModal(null, null, item);
+    openScheduleModal(null, null, item, false);
   };
 
   window.copyLink = function (link) {
@@ -1202,11 +1268,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch {}
   };
-
-  function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
-  }
 
   // Initial load & periodic polling
   fetchStatus();

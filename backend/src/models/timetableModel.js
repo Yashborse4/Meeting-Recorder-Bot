@@ -56,7 +56,10 @@ function addOrUpdateClass(classData) {
   // Multi-slot support for scheduling the same subject across multiple days and times
   if (Array.isArray(classData.slots) && classData.slots.length > 0) {
     const baseName = (classData.name || 'Untitled Class').trim();
-    const baseLink = (classData.link || '').trim();
+    let baseLink = (classData.link || '').trim();
+    if (baseLink && !baseLink.startsWith('http://') && !baseLink.startsWith('https://')) {
+      baseLink = 'https://' + baseLink;
+    }
     const enabled = classData.enabled !== false;
     const savedEntries = [];
 
@@ -110,10 +113,15 @@ function addOrUpdateClass(classData) {
   const normalizedTime = normalizeTimeTo24(classData.time);
   const time12 = formatTimeTo12IST(normalizedTime);
 
+  let link = (classData.link || '').trim();
+  if (link && !link.startsWith('http://') && !link.startsWith('https://')) {
+    link = 'https://' + link;
+  }
+
   const entry = {
     id,
     name: classData.name || 'Untitled Class',
-    link: classData.link || '',
+    link,
     days: formattedDays,
     time: normalizedTime,
     time12,
