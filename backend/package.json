@@ -9,6 +9,8 @@
     "schedule": "node src/scheduler.js",
     "schedule:list": "node src/manageTimetable.js list",
     "schedule:add": "node src/manageTimetable.js add",
+    "startup:enable": "cmd /c ..\\ENABLE_WINDOWS_STARTUP.bat",
+    "startup:disable": "cmd /c ..\\DISABLE_WINDOWS_STARTUP.bat",
     "test:bot": "node src/index.js https://meet.google.com/new 1"
   },
   "dependencies": {

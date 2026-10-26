@@ -5,8 +5,10 @@
 document.addEventListener('DOMContentLoaded', () => {
   // State
   let timetableData = [];
+  let subjectsData = [];
   let currentDayFilter = 'all';
   let isEditingId = null;
+  let editingSubjectId = null;
 
   // DOM Elements
   const timetableGrid = document.getElementById('timetable-grid');
@@ -16,7 +18,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCloseModal = document.getElementById('btn-close-modal');
   const btnCancelModal = document.getElementById('btn-cancel-modal');
   const modalTitle = document.getElementById('modal-title');
+  const btnSaveClassText = document.getElementById('btn-save-class-text');
   const toastContainer = document.getElementById('toast-container');
+  const btnQuickManageSubjects = document.getElementById('btn-quick-manage-subjects');
+  const btnModalManageClasses = document.getElementById('btn-modal-manage-classes');
 
   // Metrics Elements
   const nextClassTitle = document.getElementById('next-class-title');
@@ -26,7 +31,45 @@ document.addEventListener('DOMContentLoaded', () => {
   const nextClassLink = document.getElementById('next-class-link');
   const statTotalClasses = document.getElementById('stat-total-classes');
   const statActiveClasses = document.getElementById('stat-active-classes');
+  const statTotalSubjects = document.getElementById('stat-total-subjects');
+  const statSubjectsSummary = document.getElementById('stat-subjects-summary');
   const statTotalRecordings = document.getElementById('stat-total-recordings');
+
+  // Streamlined Modal Elements
+  const scheduleClassSelect = document.getElementById('schedule-class-select');
+  const scheduleLinkText = document.getElementById('schedule-link-text');
+  const scheduleLinkTestBtn = document.getElementById('schedule-link-test-btn');
+  const scheduleDotIndicator = document.getElementById('schedule-dot-indicator');
+  const btnCopyPreviewLink = document.getElementById('btn-copy-preview-link');
+  const inlineCreateClassPanel = document.getElementById('inline-create-class-panel');
+  const inlineClassName = document.getElementById('inline-class-name');
+  const inlineClassLink = document.getElementById('inline-class-link');
+  const btnInlineSaveClass = document.getElementById('btn-inline-save-class');
+  const btnInlineCancel = document.getElementById('btn-inline-cancel');
+  const btnCloseInlinePanel = document.getElementById('btn-close-inline-panel');
+  const scheduleTimeNative = document.getElementById('schedule-time-native');
+  const scheduleDurationInput = document.getElementById('schedule-duration-input');
+  const schedPreviewTitle = document.getElementById('sched-preview-title');
+  const schedPreviewTiming = document.getElementById('sched-preview-timing');
+  const classEnabledInput = document.getElementById('class-enabled');
+  const classNameInput = document.getElementById('class-name');
+  const classLinkInput = document.getElementById('class-link');
+  const classIdInput = document.getElementById('class-id');
+
+  // Subjects / Catalog Screen Elements
+  const subjectsGrid = document.getElementById('subjects-grid');
+  const subjectEditorCard = document.getElementById('subject-editor-card');
+  const btnToggleSubjectEditor = document.getElementById('btn-toggle-subject-editor');
+  const btnCloseSubjectEditor = document.getElementById('btn-close-subject-editor');
+  const btnCancelSubjectEditor = document.getElementById('btn-cancel-subject-editor');
+  const subjectEditorForm = document.getElementById('subject-editor-form');
+  const subjectInputName = document.getElementById('subject-input-name');
+  const subjectInputLink = document.getElementById('subject-input-link');
+  const subjectInputDuration = document.getElementById('subject-input-duration');
+  const subjectInputColor = document.getElementById('subject-input-color');
+  const subjectEditId = document.getElementById('subject-edit-id');
+  const subjectEditorTitle = document.getElementById('subject-editor-title');
+  const btnSubmitSubjectText = document.getElementById('btn-submit-subject-text');
 
   // Scheduler Status Pill
   const schedulerPill = document.getElementById('scheduler-pill');
@@ -80,6 +123,8 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById(targetId)?.classList.add('active');
 
       if (btn.dataset.tab === 'recordings') fetchRecordings();
+      if (btn.dataset.tab === 'subjects') fetchSubjects();
+      if (btn.dataset.tab === 'timetable') fetchTimetable();
     });
   });
 
@@ -198,21 +243,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // -------------------------------------------------------------
-  // TIMETABLE RENDERING & MANAGEMENT
+  // HELPER UTILITIES
   // -------------------------------------------------------------
-  async function fetchTimetable() {
-    try {
-      const res = await fetch('/api/timetable');
-      timetableData = await res.json();
-
-      statTotalClasses.textContent = timetableData.length;
-      statActiveClasses.textContent = `${timetableData.filter((c) => c.enabled).length} active classes`;
-
-      renderTimetable();
-      updateSubjectDatalist();
-    } catch (e) {
-      console.error('Error fetching timetable:', e);
-    }
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function formatTime12(timeStr) {
@@ -243,51 +283,366 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${String(h).padStart(2, '0')}:${m} ${ampm} IST`;
   }
 
+  // -------------------------------------------------------------
+  // SUBJECTS & CLASS DIRECTORY (VARIETY OF CLASSES)
+  // -------------------------------------------------------------
+  async function fetchSubjects() {
+    try {
+      const res = await fetch('/api/subjects');
+      const data = await res.json();
+      subjectsData = data.subjects || [];
+
+      if (statTotalSubjects) statTotalSubjects.textContent = subjectsData.length;
+      if (statSubjectsSummary) {
+        if (subjectsData.length === 0) {
+          statSubjectsSummary.textContent = 'No classes registered yet';
+        } else {
+          statSubjectsSummary.textContent = subjectsData.slice(0, 3).map((s) => s.name).join(', ') +
+            (subjectsData.length > 3 ? ` +${subjectsData.length - 3} more` : '');
+        }
+      }
+
+      renderSubjects();
+      populateScheduleClassDropdown();
+    } catch (err) {
+      console.error('[App] Failed fetching subjects catalog:', err);
+    }
+  }
+
+  function renderSubjects() {
+    if (!subjectsGrid) return;
+    if (!subjectsData || subjectsData.length === 0) {
+      subjectsGrid.innerHTML = `
+        <div class="empty-catalog-state">
+          <div style="font-size: 2.2rem; margin-bottom: 12px;">📚</div>
+          <h3>No Class Varieties Registered</h3>
+          <p>Register all the classes you attend (Advance Engineering Math, Robotics, etc.) and their Google Meet links once. Then add them to your timetable with 1 click.</p>
+          <button type="button" class="btn-primary" onclick="openSubjectEditor()">
+            + Register First Class
+          </button>
+        </div>
+      `;
+      return;
+    }
+
+    subjectsGrid.innerHTML = subjectsData.map((subj) => {
+      const subjNameLower = (subj.name || '').trim().toLowerCase();
+      const matchingSlots = timetableData.filter(
+        (t) => (t.name || '').trim().toLowerCase() === subjNameLower
+      );
+
+      let scheduleSummary = 'Not scheduled on timetable';
+      if (matchingSlots.length > 0) {
+        const allDays = new Set();
+        matchingSlots.forEach((slot) => {
+          const days = Array.isArray(slot.days) ? slot.days : [slot.days];
+          days.forEach((d) => allDays.add(String(d).toLowerCase().slice(0, 3)));
+        });
+        const daysStr = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+          .filter((d) => allDays.has(d))
+          .map((d) => d.charAt(0).toUpperCase() + d.slice(1))
+          .join(', ');
+        scheduleSummary = `Scheduled ${matchingSlots.length} slot${matchingSlots.length > 1 ? 's' : ''} (${daysStr || 'Active'})`;
+      }
+
+      const color = subj.color || '#6366f1';
+
+      return `
+        <div class="subject-card">
+          <div class="subject-color-strip" style="background: ${color};"></div>
+          <div class="subject-card-body">
+            <div class="subject-card-header">
+              <div>
+                <h3 class="subject-card-title">${escapeHtml(subj.name)}</h3>
+                <span class="subject-badge-pill" style="border-color: ${color}; color: ${color};">
+                  ${subj.defaultDuration || 60} mins default
+                </span>
+              </div>
+              <div style="display: flex; gap: 4px;">
+                <button class="btn-icon" onclick="editSubject('${subj.id}')" title="Edit this class variety">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button class="btn-icon" onclick="deleteSubject('${subj.id}')" title="Delete class variety">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="subject-link-box">
+              <span class="subject-link-url" title="${escapeHtml(subj.link)}">${escapeHtml(subj.link)}</span>
+              <div style="display: flex; gap: 4px; flex-shrink: 0;">
+                <button type="button" class="btn-icon-xs" onclick="copyLink('${escapeHtml(subj.link)}')" title="Copy Meet link">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  Copy
+                </button>
+                <a href="${escapeHtml(subj.link)}" target="_blank" class="btn-icon-xs" title="Test Google Meet link in new tab">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+                  Test
+                </a>
+              </div>
+            </div>
+
+            <div class="subject-schedule-meta">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              <span>${scheduleSummary}</span>
+            </div>
+          </div>
+
+          <div class="subject-card-footer">
+            <button type="button" class="btn-subject-schedule" onclick="scheduleThisSubject('${subj.id}')" title="Schedule this class into your weekly timetable">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add to Timetable
+            </button>
+            <button type="button" class="btn-card-record" onclick="triggerImmediate('${escapeHtml(subj.link)}', ${subj.defaultDuration || 60}, '${escapeHtml(subj.name)}')" title="Launch and record this class now">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Record Now
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  window.openSubjectEditor = function (subj = null) {
+    if (!subjectEditorCard) return;
+    editingSubjectId = subj ? subj.id : null;
+
+    if (subj) {
+      if (subjectEditorTitle) subjectEditorTitle.textContent = 'Edit Class Variety';
+      if (btnSubmitSubjectText) btnSubmitSubjectText.textContent = 'Save Changes';
+      if (subjectEditId) subjectEditId.value = subj.id;
+      if (subjectInputName) subjectInputName.value = subj.name;
+      if (subjectInputLink) subjectInputLink.value = subj.link;
+      if (subjectInputDuration) subjectInputDuration.value = subj.defaultDuration || 60;
+      if (subjectInputColor) subjectInputColor.value = subj.color || '#6366f1';
+    } else {
+      if (subjectEditorTitle) subjectEditorTitle.textContent = 'Register Class / Meeting';
+      if (btnSubmitSubjectText) btnSubmitSubjectText.textContent = 'Save Class to Directory';
+      if (subjectEditId) subjectEditId.value = '';
+      if (subjectInputName) subjectInputName.value = '';
+      if (subjectInputLink) subjectInputLink.value = '';
+      if (subjectInputDuration) subjectInputDuration.value = 60;
+      if (subjectInputColor) subjectInputColor.value = '#6366f1';
+    }
+
+    // Update active color circle
+    const activeColor = subjectInputColor?.value || '#6366f1';
+    document.querySelectorAll('.color-circle').forEach((c) => {
+      c.classList.toggle('active', c.dataset.color === activeColor);
+    });
+
+    subjectEditorCard.style.display = 'block';
+    subjectEditorCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
+
+  window.closeSubjectEditor = function () {
+    if (subjectEditorCard) subjectEditorCard.style.display = 'none';
+  };
+
+  window.editSubject = function (id) {
+    const subj = subjectsData.find((s) => s.id === id);
+    if (subj) openSubjectEditor(subj);
+  };
+
+  window.deleteSubject = async function (id) {
+    const subj = subjectsData.find((s) => s.id === id);
+    if (!confirm(`Delete "${subj ? subj.name : 'this class'}" from the catalog?`)) return;
+
+    try {
+      const res = await fetch(`/api/subjects/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.ok) {
+        showToast('Class variety deleted');
+        await fetchSubjects();
+        await fetchTimetable();
+      }
+    } catch {
+      showToast('Failed to delete class', 'error');
+    }
+  };
+
+  window.scheduleThisSubject = function (subjectId) {
+    // Switch to timetable tab
+    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
+
+    const timetableTabBtn = document.querySelector('.tab-btn[data-tab="timetable"]');
+    const timetableSection = document.getElementById('tab-timetable');
+    if (timetableTabBtn) timetableTabBtn.classList.add('active');
+    if (timetableSection) timetableSection.classList.add('active');
+
+    openScheduleModal(currentDayFilter, subjectId);
+  };
+
+  window.setSubjectFormDuration = function (mins) {
+    if (subjectInputDuration) subjectInputDuration.value = mins;
+    document.querySelectorAll('.duration-quick-selector .chip-duration-sm').forEach((c) => {
+      c.classList.toggle('active', parseInt(c.textContent, 10) === mins);
+    });
+  };
+
+  // Color picker circle clicks
+  document.querySelectorAll('.color-circle').forEach((circle) => {
+    circle.addEventListener('click', () => {
+      document.querySelectorAll('.color-circle').forEach((c) => c.classList.remove('active'));
+      circle.classList.add('active');
+      if (subjectInputColor) subjectInputColor.value = circle.dataset.color;
+    });
+  });
+
+  btnToggleSubjectEditor?.addEventListener('click', () => {
+    if (subjectEditorCard.style.display === 'none' || !subjectEditorCard.style.display) {
+      openSubjectEditor();
+    } else {
+      closeSubjectEditor();
+    }
+  });
+  btnCloseSubjectEditor?.addEventListener('click', closeSubjectEditor);
+  btnCancelSubjectEditor?.addEventListener('click', closeSubjectEditor);
+
+  // Save Subject in Directory
+  subjectEditorForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const name = (subjectInputName?.value || '').trim();
+    const link = (subjectInputLink?.value || '').trim();
+    const defaultDuration = parseInt(subjectInputDuration?.value || '60', 10);
+    const color = subjectInputColor?.value || '#6366f1';
+    const id = subjectEditId?.value || undefined;
+
+    if (!name) {
+      showToast('Please enter a class name.', 'error');
+      return;
+    }
+    if (!link || !link.includes('meet.google.com')) {
+      showToast('Please provide a valid Google Meet link.', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/subjects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name, link, defaultDuration, color }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+
+      showToast(`Class "${name}" saved to catalog!`);
+      closeSubjectEditor();
+      await fetchSubjects();
+      await fetchTimetable();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // -------------------------------------------------------------
+  // TIMETABLE RENDERING & MANAGEMENT
+  // -------------------------------------------------------------
+  async function fetchTimetable() {
+    try {
+      const res = await fetch('/api/timetable');
+      timetableData = await res.json();
+
+      if (statTotalClasses) statTotalClasses.textContent = timetableData.length;
+      if (statActiveClasses) {
+        statActiveClasses.textContent = `${timetableData.filter((c) => c.enabled).length} active classes`;
+      }
+
+      renderTimetable();
+    } catch (e) {
+      console.error('[App] Error fetching timetable:', e);
+    }
+  }
+
   function renderTimetable() {
     const daysOrder = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
+    // Update count badges on day filter buttons
+    document.querySelectorAll('.day-filter').forEach((btn) => {
+      const d = btn.dataset.day;
+      let count = 0;
+      if (d === 'all') {
+        count = timetableData.length;
+      } else {
+        count = timetableData.filter((item) => {
+          const days = (Array.isArray(item.days) ? item.days : [item.days]).map((x) => String(x).toLowerCase().slice(0, 3));
+          return days.includes(d) || days.includes('all') || days.includes('*');
+        }).length;
+      }
+      const label = d === 'all' ? 'All Days' : d.charAt(0).toUpperCase() + d.slice(1);
+      btn.innerHTML = `${label} <span class="day-count-badge">${count}</span>`;
+    });
+
     const filtered = timetableData.filter((item) => {
       if (currentDayFilter === 'all') return true;
-      const days = (Array.isArray(item.days) ? item.days : [item.days]).map((d) => d.toLowerCase());
+      const days = (Array.isArray(item.days) ? item.days : [item.days]).map((d) => String(d).toLowerCase().slice(0, 3));
       return days.includes(currentDayFilter) || days.includes('all') || days.includes('*');
     });
 
+    // Chronological sort
+    filtered.sort((a, b) => {
+      const tA = String(a.time || '00:00');
+      const tB = String(b.time || '00:00');
+      return tA.localeCompare(tB);
+    });
+
     if (filtered.length === 0) {
+      const dayLabel = currentDayFilter === 'all'
+        ? 'your timetable'
+        : currentDayFilter.charAt(0).toUpperCase() + currentDayFilter.slice(1);
+
       timetableGrid.innerHTML = `
         <div class="empty-state">
           <div class="empty-icon">📅</div>
-          <h3>No classes found for this filter</h3>
-          <p>Click "Add New Class" above to schedule a Google Meet recording.</p>
+          <h3>No classes scheduled for ${dayLabel}</h3>
+          <p>Pick a class from your catalog and set its timing in seconds with zero clutter.</p>
+          <button class="btn-primary" onclick="openScheduleModal('${currentDayFilter !== 'all' ? currentDayFilter : ''}')">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            + Schedule Class ${currentDayFilter !== 'all' ? 'for ' + dayLabel : ''}
+          </button>
         </div>
       `;
       return;
     }
 
     timetableGrid.innerHTML = filtered.map((item) => {
-      const itemDays = (Array.isArray(item.days) ? item.days : [item.days]).map((d) => d.toLowerCase());
+      const itemDays = (Array.isArray(item.days) ? item.days : [item.days]).map((d) => String(d).toLowerCase().slice(0, 3));
       const isAll = itemDays.includes('all') || itemDays.includes('*');
+
+      const matchedSubj = subjectsData.find(
+        (s) => (s.name || '').trim().toLowerCase() === (item.name || '').trim().toLowerCase()
+      );
+      const color = matchedSubj ? matchedSubj.color : '#6366f1';
 
       const dayTags = daysOrder.map((day) => {
         const isActive = isAll || itemDays.includes(day);
         return `<span class="day-tag ${isActive ? 'active' : ''}">${day}</span>`;
       }).join('');
 
+      let timeRange = formatTime12(item.time12 || item.time);
+      if (item.time && item.duration) {
+        const [hStr, mStr] = item.time.split(':');
+        let totalMins = parseInt(hStr, 10) * 60 + parseInt(mStr, 10) + parseInt(item.duration, 10);
+        let endH = Math.floor(totalMins / 60) % 24;
+        let endM = totalMins % 60;
+        let endAmpm = endH >= 12 ? 'PM' : 'AM';
+        let endH12 = endH % 12 || 12;
+        let endStr = `${String(endH12).padStart(2, '0')}:${String(endM).padStart(2, '0')} ${endAmpm}`;
+        timeRange = `${formatTime12Plain(item.time12 || item.time)} - ${endStr} <span class="tz-badge">IST</span>`;
+      }
+
       return `
         <div class="class-card ${!item.enabled ? 'disabled' : ''}">
+          <div class="subject-color-strip" style="background: ${color}; width: 4px; position: absolute; left: 0; top: 0; height: 100%;"></div>
           <div>
             <div class="class-card-header">
               <div class="class-title-group">
+                <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${color}; margin-right: 6px;"></span>
                 <h4 class="class-card-title">${escapeHtml(item.name)}</h4>
-                <button class="btn-card-duplicate" onclick="duplicateClass('${item.id}')" title="Schedule another day or time for this subject">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  + Add Day/Time
-                </button>
-                <button class="btn-card-edit-quick" onclick="editClass('${item.id}')" title="Edit this class configuration">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                  Edit
-                </button>
               </div>
-              <label class="switch-control" title="Toggle active status">
+              <label class="switch-control" title="Toggle active automated recording">
                 <input type="checkbox" ${item.enabled ? 'checked' : ''} onchange="toggleActiveClass('${item.id}')">
                 <span class="switch-slider"></span>
               </label>
@@ -295,7 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             <div class="class-card-time">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              <span>${formatTime12(item.time12 || item.time)}</span>
+              <span>${timeRange}</span>
               <span class="class-duration-badge">(${item.duration || 60} mins)</span>
             </div>
 
@@ -306,7 +661,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="class-card-link">
               <span class="link-text" title="${escapeHtml(item.link)}">${escapeHtml(item.link)}</span>
               <div class="link-actions">
-                <button class="btn-icon" onclick="copyLink('${escapeHtml(item.link)}')" title="Copy link">
+                <button type="button" class="btn-icon" onclick="copyLink('${escapeHtml(item.link)}')" title="Copy Meet link">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                 </button>
                 <a href="${escapeHtml(item.link)}" target="_blank" class="btn-icon" title="Open Meet in new tab">
@@ -317,16 +672,16 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
 
           <div class="class-card-actions">
-            <button class="btn-card-edit-prominent" onclick="editClass('${item.id}')" title="Edit class settings, link and time">
+            <button type="button" class="btn-card-edit-prominent" onclick="editClass('${item.id}')" title="Edit timing or days for this class">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              Edit Class
+              Edit Schedule
             </button>
             <div style="display: flex; gap: 8px;">
-              <button class="btn-card-record" onclick="triggerImmediate('${escapeHtml(item.link)}', ${item.duration || 60}, '${escapeHtml(item.name)}')" title="Launch and record this class now">
+              <button type="button" class="btn-card-record" onclick="triggerImmediate('${escapeHtml(item.link)}', ${item.duration || 60}, '${escapeHtml(item.name)}')" title="Launch and record this class now">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 Record Now
               </button>
-              <button class="btn-danger btn-sm" onclick="deleteClass('${item.id}')" title="Delete class">
+              <button type="button" class="btn-danger btn-sm" onclick="deleteClass('${item.id}')" title="Delete class">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
             </div>
@@ -336,7 +691,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }).join('');
   }
 
-  // Day filter buttons
+  // Day filter button listeners
   document.querySelectorAll('.day-filter').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.day-filter').forEach((b) => b.classList.remove('active'));
@@ -345,6 +700,396 @@ document.addEventListener('DOMContentLoaded', () => {
       renderTimetable();
     });
   });
+
+  // -------------------------------------------------------------
+  // STREAMLINED CLUTTER-FREE SCHEDULING (MODAL)
+  // -------------------------------------------------------------
+  function populateScheduleClassDropdown(selectedId = null) {
+    if (!scheduleClassSelect) return;
+
+    if (subjectsData.length === 0) {
+      scheduleClassSelect.innerHTML = `
+        <option value="__new__">+ Register New Class Variety...</option>
+      `;
+      syncModalSelectedSubject();
+      return;
+    }
+
+    let html = subjectsData.map((s) => {
+      const isSelected = selectedId === s.id ? 'selected' : '';
+      return `<option value="${s.id}" ${isSelected}>${escapeHtml(s.name)}</option>`;
+    }).join('');
+
+    html += `<option value="__new__">➕ Add New Class Variety...</option>`;
+    scheduleClassSelect.innerHTML = html;
+
+    if (selectedId) {
+      scheduleClassSelect.value = selectedId;
+    } else if (!scheduleClassSelect.value) {
+      scheduleClassSelect.selectedIndex = 0;
+    }
+
+    syncModalSelectedSubject();
+  }
+
+  function syncModalSelectedSubject() {
+    const val = scheduleClassSelect?.value;
+    if (val === '__new__') {
+      if (inlineCreateClassPanel) inlineCreateClassPanel.style.display = 'block';
+      if (scheduleLinkText) scheduleLinkText.textContent = 'Enter Meet link below';
+      if (classNameInput) classNameInput.value = '';
+      if (classLinkInput) classLinkInput.value = '';
+      updateSchedulePreviewSummary();
+      return;
+    }
+
+    if (inlineCreateClassPanel) inlineCreateClassPanel.style.display = 'none';
+
+    const subj = subjectsData.find((s) => s.id === val);
+    if (subj) {
+      if (classNameInput) classNameInput.value = subj.name;
+      if (classLinkInput) classLinkInput.value = subj.link;
+      if (scheduleLinkText) scheduleLinkText.textContent = subj.link || 'No Meet link configured';
+      if (scheduleLinkTestBtn) scheduleLinkTestBtn.href = subj.link || '#';
+      if (scheduleDotIndicator) scheduleDotIndicator.style.background = subj.color || '#10b981';
+
+      if (!isEditingId && scheduleDurationInput && subj.defaultDuration) {
+        setScheduleDuration(subj.defaultDuration);
+      }
+    }
+
+    updateSchedulePreviewSummary();
+  }
+
+  scheduleClassSelect?.addEventListener('change', syncModalSelectedSubject);
+
+  window.setScheduleTime = function (hhmm) {
+    if (!scheduleTimeNative) return;
+    scheduleTimeNative.value = hhmm;
+    document.querySelectorAll('.chip-time').forEach((c) => {
+      const [h, m] = hhmm.split(':');
+      const h12 = (parseInt(h, 10) % 12 || 12).toString().padStart(2, '0');
+      c.classList.toggle('active', c.textContent.trim().startsWith(`${h12}:${m}`));
+    });
+    updateSchedulePreviewSummary();
+  };
+
+  window.setScheduleDuration = function (mins) {
+    if (!scheduleDurationInput) return;
+    scheduleDurationInput.value = mins;
+    document.querySelectorAll('.duration-quick-chips .chip-duration').forEach((c) => {
+      c.classList.toggle('active', parseInt(c.textContent, 10) === mins || (mins === 120 && c.textContent.includes('2 hr')));
+    });
+    updateSchedulePreviewSummary();
+  };
+
+  window.setScheduleDaysPreset = function (preset) {
+    const checkboxes = document.querySelectorAll('input[name="sched_day"]');
+    const now = new Date();
+    const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const todayName = dayNames[now.getDay()];
+
+    checkboxes.forEach((cb) => {
+      const val = cb.value;
+      if (preset === 'today') {
+        cb.checked = val === todayName;
+      } else if (preset === 'weekdays') {
+        cb.checked = ['mon', 'tue', 'wed', 'thu', 'fri'].includes(val);
+      } else if (preset === 'mwf') {
+        cb.checked = ['mon', 'wed', 'fri'].includes(val);
+      } else if (preset === 'tts') {
+        cb.checked = ['tue', 'thu', 'sat'].includes(val);
+      } else if (preset === 'all') {
+        cb.checked = true;
+      }
+    });
+    updateSchedulePreviewSummary();
+  };
+
+  function updateSchedulePreviewSummary() {
+    if (!schedPreviewTitle || !schedPreviewTiming) return;
+
+    const subjectName = classNameInput?.value || 'Selected Class';
+    const checkedDays = Array.from(document.querySelectorAll('input[name="sched_day"]:checked')).map((cb) => cb.value);
+
+    let daysText = 'No days selected';
+    if (checkedDays.length === 7) daysText = 'Every day (Mon-Sun)';
+    else if (checkedDays.length === 5 && !checkedDays.includes('sat') && !checkedDays.includes('sun')) daysText = 'Every Mon - Fri (Weekdays)';
+    else if (checkedDays.length > 0) {
+      const dayOrder = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+      daysText = [...checkedDays]
+        .sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b))
+        .map((d) => d.charAt(0).toUpperCase() + d.slice(1))
+        .join(', ');
+    }
+
+    const timeVal = scheduleTimeNative?.value || '10:00';
+    const durationVal = parseInt(scheduleDurationInput?.value || '60', 10);
+    const time12Str = formatTime12Plain(timeVal);
+
+    schedPreviewTitle.textContent = subjectName;
+    schedPreviewTiming.textContent = `${daysText} at ${time12Str} (${durationVal} mins)`;
+  }
+
+  // Update summary on time or duration input typing
+  scheduleTimeNative?.addEventListener('input', updateSchedulePreviewSummary);
+  scheduleDurationInput?.addEventListener('input', updateSchedulePreviewSummary);
+  document.querySelectorAll('input[name="sched_day"]').forEach((cb) => {
+    cb.addEventListener('change', updateSchedulePreviewSummary);
+  });
+
+  window.openScheduleModal = function (day = null, subjectId = null, editingItem = null) {
+    isEditingId = editingItem ? editingItem.id : null;
+    if (inlineCreateClassPanel) inlineCreateClassPanel.style.display = 'none';
+
+    if (editingItem) {
+      if (modalTitle) modalTitle.textContent = 'Edit Scheduled Class';
+      const sub = document.getElementById('modal-subtitle');
+      if (sub) sub.textContent = `Update timing, days, or duration for "${editingItem.name}"`;
+      if (btnSaveClassText) btnSaveClassText.textContent = 'Save Changes';
+
+      if (classIdInput) classIdInput.value = editingItem.id;
+      if (classNameInput) classNameInput.value = editingItem.name;
+      if (classLinkInput) classLinkInput.value = editingItem.link;
+      if (classEnabledInput) classEnabledInput.checked = editingItem.enabled !== false;
+
+      const matched = subjectsData.find(
+        (s) => (s.name || '').trim().toLowerCase() === (editingItem.name || '').trim().toLowerCase()
+      );
+      populateScheduleClassDropdown(matched ? matched.id : null);
+
+      const itemDays = (Array.isArray(editingItem.days) ? editingItem.days : [editingItem.days]).map((d) =>
+        String(d).toLowerCase().slice(0, 3)
+      );
+      document.querySelectorAll('input[name="sched_day"]').forEach((cb) => {
+        cb.checked = itemDays.includes(cb.value) || itemDays.includes('all') || itemDays.includes('*');
+      });
+
+      setScheduleTime(editingItem.time || '10:00');
+      setScheduleDuration(editingItem.duration || 60);
+    } else {
+      if (modalTitle) modalTitle.textContent = 'Schedule a Class';
+      const sub = document.getElementById('modal-subtitle');
+      if (sub) sub.textContent = 'Select class, choose day and time, and set duration';
+      if (btnSaveClassText) btnSaveClassText.textContent = 'Schedule Class';
+
+      if (classIdInput) classIdInput.value = '';
+      if (classEnabledInput) classEnabledInput.checked = true;
+
+      populateScheduleClassDropdown(subjectId);
+
+      const targetDay = day && day !== 'all' ? day.toLowerCase().slice(0, 3) : null;
+      document.querySelectorAll('input[name="sched_day"]').forEach((cb) => {
+        if (targetDay) {
+          cb.checked = cb.value === targetDay;
+        } else {
+          cb.checked = ['mon', 'tue', 'wed', 'thu', 'fri'].includes(cb.value);
+        }
+      });
+
+      setScheduleTime('10:00');
+      setScheduleDuration(60);
+    }
+
+    updateSchedulePreviewSummary();
+    if (classModal) {
+      classModal.style.display = 'flex';
+      const modalWin = classModal.querySelector('.modal-window');
+      if (modalWin) modalWin.scrollTop = 0;
+    }
+  };
+
+  const closeModal = () => {
+    if (classModal) classModal.style.display = 'none';
+  };
+  window.closeModal = closeModal;
+
+  btnOpenAddModal?.addEventListener('click', () => openScheduleModal(currentDayFilter));
+  btnCloseModal?.addEventListener('click', closeModal);
+  btnCancelModal?.addEventListener('click', closeModal);
+  classModal?.addEventListener('click', (e) => {
+    if (e.target === classModal) closeModal();
+  });
+
+  // Inline Quick Class Registration
+  btnInlineSaveClass?.addEventListener('click', async () => {
+    const name = (inlineClassName?.value || '').trim();
+    const link = (inlineClassLink?.value || '').trim();
+
+    if (!name) {
+      showToast('Please enter a class name.', 'error');
+      return;
+    }
+    if (!link || !link.includes('meet.google.com')) {
+      showToast('Please enter a valid Google Meet link.', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/subjects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, link, defaultDuration: 60 }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+
+      showToast(`Class "${name}" registered and selected!`);
+      await fetchSubjects();
+      populateScheduleClassDropdown(data.subject.id);
+      if (inlineCreateClassPanel) inlineCreateClassPanel.style.display = 'none';
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  btnInlineCancel?.addEventListener('click', () => {
+    if (inlineCreateClassPanel) inlineCreateClassPanel.style.display = 'none';
+    if (scheduleClassSelect && scheduleClassSelect.options.length > 0) {
+      scheduleClassSelect.selectedIndex = 0;
+      syncModalSelectedSubject();
+    }
+  });
+
+  btnCloseInlinePanel?.addEventListener('click', () => {
+    if (inlineCreateClassPanel) inlineCreateClassPanel.style.display = 'none';
+  });
+
+  btnCopyPreviewLink?.addEventListener('click', () => {
+    const link = classLinkInput?.value;
+    if (link) {
+      navigator.clipboard.writeText(link);
+      showToast('Google Meet link copied to clipboard!');
+    }
+  });
+
+  btnQuickManageSubjects?.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
+
+    const subjTab = document.querySelector('.tab-btn[data-tab="subjects"]');
+    const subjSection = document.getElementById('tab-subjects');
+    if (subjTab) subjTab.classList.add('active');
+    if (subjSection) subjSection.classList.add('active');
+    fetchSubjects();
+  });
+
+  btnModalManageClasses?.addEventListener('click', () => {
+    closeModal();
+    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach((c) => c.classList.remove('active'));
+
+    const subjTab = document.querySelector('.tab-btn[data-tab="subjects"]');
+    const subjSection = document.getElementById('tab-subjects');
+    if (subjTab) subjTab.classList.add('active');
+    if (subjSection) subjSection.classList.add('active');
+    openSubjectEditor();
+  });
+
+  // Save / Submit Class Form
+  classForm?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const subjectName = (classNameInput?.value || '').trim();
+    const meetLink = (classLinkInput?.value || '').trim();
+    const timeVal = scheduleTimeNative?.value || '10:00';
+    const durationVal = parseInt(scheduleDurationInput?.value || '60', 10);
+    const enabledVal = classEnabledInput?.checked !== false;
+
+    if (!subjectName) {
+      showToast('Please select or enter a class name.', 'error');
+      return;
+    }
+    if (!meetLink || !meetLink.includes('meet.google.com')) {
+      showToast('Please enter a valid Google Meet link.', 'error');
+      return;
+    }
+
+    const checkedDays = Array.from(document.querySelectorAll('input[name="sched_day"]:checked')).map((cb) => cb.value);
+    if (checkedDays.length === 0) {
+      showToast('Please select at least one day of the week.', 'error');
+      return;
+    }
+
+    const payload = {
+      id: isEditingId || undefined,
+      name: subjectName,
+      link: meetLink,
+      days: checkedDays,
+      time: timeVal,
+      duration: durationVal,
+      enabled: enabledVal,
+    };
+
+    try {
+      const res = await fetch('/api/timetable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error);
+
+      showToast(`Schedule for "${subjectName}" saved!`);
+      closeModal();
+      await fetchTimetable();
+      await fetchStatus();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  // Global window functions for cards
+  window.toggleActiveClass = async function (id) {
+    try {
+      const res = await fetch(`/api/timetable/${id}/toggle`, { method: 'PATCH' });
+      const data = await res.json();
+      if (data.ok) {
+        showToast(`"${data.class.name}" ${data.class.enabled ? 'enabled' : 'disabled'}`);
+        await fetchTimetable();
+        await fetchStatus();
+      }
+    } catch {}
+  };
+
+  window.deleteClass = async function (id) {
+    if (!confirm('Are you sure you want to delete this scheduled class?')) return;
+    try {
+      const res = await fetch(`/api/timetable/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.ok) {
+        showToast('Class deleted');
+        await fetchTimetable();
+        await fetchStatus();
+      }
+    } catch {}
+  };
+
+  window.duplicateClass = function (id) {
+    const item = timetableData.find((c) => c.id === id);
+    if (!item) return;
+    openScheduleModal(currentDayFilter, null, item);
+    if (classIdInput) classIdInput.value = '';
+    if (modalTitle) modalTitle.textContent = `Schedule "${item.name}"`;
+    if (btnSaveClassText) btnSaveClassText.textContent = 'Add to Timetable';
+  };
+
+  window.editClass = function (id) {
+    const item = timetableData.find((c) => c.id === id);
+    if (!item) return;
+    openScheduleModal(null, null, item);
+  };
+
+  window.copyLink = function (link) {
+    navigator.clipboard.writeText(link);
+    showToast('Meeting link copied to clipboard!');
+  };
+
+  window.triggerImmediate = function (link, duration, name) {
+    if (confirm(`Start automated recording for "${name}" now?`)) {
+      startRecordingRequest(link, duration, name);
+    }
+  };
 
   // -------------------------------------------------------------
   // LIVE IST CLOCK (TICKER)
@@ -366,493 +1111,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   setInterval(updateLiveISTClock, 1000);
   updateLiveISTClock();
-
-  // -------------------------------------------------------------
-  // MULTI-SLOT SCHEDULE & SUBJECT AUTO-COMPLETE BUILDER
-  // -------------------------------------------------------------
-  let currentModalSlots = [];
-  let deletedSlotIds = [];
-
-  const slotsContainer = document.getElementById('schedule-slots-container');
-  const btnAddScheduleSlot = document.getElementById('btn-add-schedule-slot');
-  const btnAddScheduleSlotBottom = document.getElementById('btn-add-schedule-slot-bottom');
-  const classNameInput = document.getElementById('class-name');
-  const classLinkInput = document.getElementById('class-link');
-  const existingSubjectsDatalist = document.getElementById('existing-subjects-list');
-
-  function parseTimeToParts(timeStr) {
-    let h = 9;
-    let m = 0;
-    let ampm = 'AM';
-
-    if (timeStr) {
-      const cleaned = String(timeStr).trim().replace(/\s+(IST|GMT|UTC[+-]?\d*)$/i, '');
-      const match = cleaned.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i);
-      if (match) {
-        let [_, hStr, mStr, rawAmpm] = match;
-        let rawH = parseInt(hStr, 10);
-        m = parseInt(mStr, 10) || 0;
-        if (rawAmpm) {
-          ampm = rawAmpm.toUpperCase();
-          h = rawH % 12 || 12;
-        } else {
-          ampm = rawH >= 12 ? 'PM' : 'AM';
-          h = rawH % 12 || 12;
-        }
-      }
-    }
-    return {
-      hour: String(h).padStart(2, '0'),
-      minute: String(m).padStart(2, '0'),
-      ampm: ampm,
-    };
-  }
-
-  function createDefaultSlot(days = ['mon', 'wed', 'fri'], timeStr = '09:00 AM', duration = 60, id = '') {
-    const parts = parseTimeToParts(timeStr);
-    return {
-      id: id || '',
-      days: Array.isArray(days) ? [...days] : [String(days)],
-      hour: parts.hour,
-      minute: parts.minute,
-      ampm: parts.ampm,
-      duration: parseInt(duration, 10) || 60,
-    };
-  }
-
-  function getSlotTime12(slot) {
-    return `${slot.hour}:${slot.minute} ${slot.ampm} IST`;
-  }
-
-  function getSlotDaysSummary(days) {
-    if (!days || days.length === 0) return 'No days selected';
-    if (days.length === 7) return 'Everyday (Mon - Sun)';
-    const dayOrder = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-    const sorted = [...days].sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b));
-    return sorted.map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(', ');
-  }
-
-  function updateSubjectDatalist() {
-    if (!existingSubjectsDatalist) return;
-    const subjectMap = new Map();
-    timetableData.forEach((item) => {
-      if (item.name && item.name.trim()) {
-        const key = item.name.trim().toLowerCase();
-        if (!subjectMap.has(key)) {
-          subjectMap.set(key, { name: item.name.trim(), link: item.link || '' });
-        }
-      }
-    });
-
-    existingSubjectsDatalist.innerHTML = Array.from(subjectMap.values())
-      .map((s) => `<option value="${escapeHtml(s.name)}">${escapeHtml(s.link ? s.link : '')}</option>`)
-      .join('');
-  }
-
-  // Auto-fill Google Meet URL when user selects or types an existing subject
-  classNameInput?.addEventListener('input', () => {
-    const val = (classNameInput.value || '').trim().toLowerCase();
-    if (!val) return;
-    const match = timetableData.find((c) => (c.name || '').trim().toLowerCase() === val);
-    if (match && match.link && (!classLinkInput.value || classLinkInput.value === '')) {
-      classLinkInput.value = match.link;
-    }
-  });
-
-  function renderModalSlots() {
-    if (!slotsContainer) return;
-    if (currentModalSlots.length === 0) {
-      currentModalSlots = [createDefaultSlot()];
-    }
-
-    const daysList = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-    const hoursList = ['12', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'];
-    const minutesList = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'));
-
-    slotsContainer.innerHTML = currentModalSlots.map((slot, idx) => {
-      const time12Str = getSlotTime12(slot);
-      const daysSummary = getSlotDaysSummary(slot.days);
-
-      const dayPillsHtml = daysList.map((d) => {
-        const isChecked = slot.days.includes(d);
-        const label = d.charAt(0).toUpperCase() + d.slice(1);
-        return `
-          <label class="day-pill">
-            <input type="checkbox" name="slot_${idx}_day" value="${d}" ${isChecked ? 'checked' : ''} onchange="toggleSlotDay(${idx}, '${d}')">
-            <span>${label}</span>
-          </label>
-        `;
-      }).join('');
-
-      return `
-        <div class="slot-card" data-slot-index="${idx}">
-          <div class="slot-header">
-            <div class="slot-badge">
-              <span class="slot-number">Schedule Slot #${idx + 1}</span>
-              <span class="slot-summary-pill">${time12Str} (${daysSummary})</span>
-            </div>
-            ${currentModalSlots.length > 1 ? `
-              <button type="button" class="btn-slot-remove" onclick="removeSlot(${idx})" title="Remove this schedule slot">
-                ✕ Remove Slot
-              </button>
-            ` : ''}
-          </div>
-
-          <div class="slot-body">
-            <div class="slot-days-row">
-              <div class="label-with-presets">
-                <label class="slot-label">Select Days (Mon - Sun)</label>
-                <div class="day-presets">
-                  <button type="button" class="btn-preset" onclick="applySlotPreset(${idx}, 'weekdays')">Weekdays</button>
-                  <button type="button" class="btn-preset" onclick="applySlotPreset(${idx}, 'mwf')">Mon, Wed, Fri</button>
-                  <button type="button" class="btn-preset" onclick="applySlotPreset(${idx}, 'tts')">Tue, Thu, Sat</button>
-                  <button type="button" class="btn-preset" onclick="applySlotPreset(${idx}, 'all')">Everyday</button>
-                </div>
-              </div>
-              <div class="day-checkbox-pills">
-                ${dayPillsHtml}
-              </div>
-            </div>
-
-            <div class="time-picker-section" style="margin-top: 14px;">
-              <div class="time-header-row">
-                <label class="slot-label">Class Timing & Duration</label>
-                <span class="tz-badge-pill">🇮🇳 IST (UTC+5:30)</span>
-              </div>
-
-              <div class="time-picker-grid">
-                <!-- Hour -->
-                <div class="time-col">
-                  <label class="time-sublabel">Hour (1-12)</label>
-                  <select class="select-styled" onchange="updateSlotTime(${idx}, 'hour', this.value)">
-                    ${hoursList.map((h) => `<option value="${h}" ${slot.hour === h ? 'selected' : ''}>${h}</option>`).join('')}
-                  </select>
-                </div>
-
-                <div class="time-separator">:</div>
-
-                <!-- Minute -->
-                <div class="time-col">
-                  <label class="time-sublabel">Minute</label>
-                  <select class="select-styled" onchange="updateSlotTime(${idx}, 'minute', this.value)">
-                    ${minutesList.map((m) => `<option value="${m}" ${slot.minute === m ? 'selected' : ''}>${m}</option>`).join('')}
-                  </select>
-                </div>
-
-                <!-- AM / PM -->
-                <div class="time-col ampm-col">
-                  <label class="time-sublabel">AM / PM</label>
-                  <div class="ampm-toggle-group">
-                    <button type="button" class="btn-ampm ${slot.ampm === 'AM' ? 'active' : ''}" onclick="setSlotAmpm(${idx}, 'AM')">AM</button>
-                    <button type="button" class="btn-ampm ${slot.ampm === 'PM' ? 'active' : ''}" onclick="setSlotAmpm(${idx}, 'PM')">PM</button>
-                  </div>
-                </div>
-
-                <!-- Duration -->
-                <div class="time-col duration-col">
-                  <label class="time-sublabel">Duration</label>
-                  <div class="input-with-unit">
-                    <input type="number" class="select-styled" value="${slot.duration || 60}" min="5" max="360" onchange="updateSlotTime(${idx}, 'duration', this.value)" required>
-                    <span class="unit-text">mins</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="time-preview-banner">
-                <span class="preview-label">Timing:</span>
-                <strong class="preview-value">${time12Str}</strong>
-                <span class="preview-hint">(${daysSummary} • ${slot.duration || 60} mins)</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  window.toggleSlotDay = function (slotIdx, day) {
-    if (!currentModalSlots[slotIdx]) return;
-    const days = currentModalSlots[slotIdx].days;
-    const pos = days.indexOf(day);
-    if (pos >= 0) {
-      if (days.length > 1) days.splice(pos, 1);
-      else showToast('At least one day must be selected for this slot', 'error');
-    } else {
-      days.push(day);
-    }
-    renderModalSlots();
-  };
-
-  window.applySlotPreset = function (slotIdx, preset) {
-    if (!currentModalSlots[slotIdx]) return;
-    if (preset === 'weekdays') currentModalSlots[slotIdx].days = ['mon', 'tue', 'wed', 'thu', 'fri'];
-    else if (preset === 'mwf') currentModalSlots[slotIdx].days = ['mon', 'wed', 'fri'];
-    else if (preset === 'tts') currentModalSlots[slotIdx].days = ['tue', 'thu', 'sat'];
-    else if (preset === 'all') currentModalSlots[slotIdx].days = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-    else if (preset === 'weekends') currentModalSlots[slotIdx].days = ['sat', 'sun'];
-    renderModalSlots();
-  };
-
-  window.updateSlotTime = function (slotIdx, field, val) {
-    if (!currentModalSlots[slotIdx]) return;
-    if (field === 'duration') {
-      currentModalSlots[slotIdx].duration = parseInt(val, 10) || 60;
-    } else {
-      currentModalSlots[slotIdx][field] = val;
-    }
-    renderModalSlots();
-  };
-
-  window.setSlotAmpm = function (slotIdx, ampm) {
-    if (!currentModalSlots[slotIdx]) return;
-    currentModalSlots[slotIdx].ampm = ampm;
-    renderModalSlots();
-  };
-
-  window.removeSlot = function (slotIdx) {
-    if (currentModalSlots.length <= 1) {
-      showToast('You must have at least one schedule slot.', 'error');
-      return;
-    }
-    const removed = currentModalSlots[slotIdx];
-    if (removed && removed.id) {
-      deletedSlotIds.push(removed.id);
-    }
-    currentModalSlots.splice(slotIdx, 1);
-    renderModalSlots();
-  };
-
-  function addScheduleSlot() {
-    let nextDays = ['mon', 'wed', 'fri'];
-    let nextTimeStr = '02:00 PM';
-    if (currentModalSlots.length > 0) {
-      const last = currentModalSlots[currentModalSlots.length - 1];
-      if (last.days.includes('mon') && !last.days.includes('tue')) {
-        nextDays = ['tue', 'thu'];
-      } else if (last.days.includes('sat')) {
-        nextDays = ['sun'];
-      }
-      nextTimeStr = last.ampm === 'AM' ? '02:00 PM' : '10:00 AM';
-    }
-    currentModalSlots.push(createDefaultSlot(nextDays, nextTimeStr, 60));
-    renderModalSlots();
-
-    setTimeout(() => {
-      const allSlots = document.querySelectorAll('.slot-card');
-      const lastEl = allSlots[allSlots.length - 1];
-      if (lastEl) lastEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 50);
-  }
-
-  btnAddScheduleSlot?.addEventListener('click', addScheduleSlot);
-  btnAddScheduleSlotBottom?.addEventListener('click', addScheduleSlot);
-
-  // Modal open/close
-  btnOpenAddModal.addEventListener('click', () => {
-    isEditingId = null;
-    deletedSlotIds = [];
-    modalTitle.textContent = 'Add Scheduled Class';
-    const subtitleEl = document.getElementById('modal-subtitle');
-    if (subtitleEl) subtitleEl.textContent = 'Configure subject timing, Meet link, and weekly schedule slots';
-    const btnSaveText = document.getElementById('btn-save-class-text');
-    if (btnSaveText) btnSaveText.textContent = 'Save Schedule';
-
-    classForm.reset();
-    document.getElementById('class-id').value = '';
-    document.getElementById('class-enabled').checked = true;
-
-    currentModalSlots = [createDefaultSlot(['mon', 'tue', 'wed', 'thu', 'fri'], '09:00 AM', 60)];
-    renderModalSlots();
-
-    classModal.style.display = 'flex';
-    const modalWin = document.querySelector('.modal-window');
-    if (modalWin) modalWin.scrollTop = 0;
-  });
-
-  const closeModal = () => (classModal.style.display = 'none');
-  btnCloseModal.addEventListener('click', closeModal);
-  btnCancelModal.addEventListener('click', closeModal);
-  classModal.addEventListener('click', (e) => {
-    if (e.target === classModal) closeModal();
-  });
-
-  // Save / Update Class Form (with Multi-Slot Support)
-  classForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const subjectName = document.getElementById('class-name').value.trim();
-    const meetLink = document.getElementById('class-link').value.trim();
-    const enabled = document.getElementById('class-enabled').checked;
-
-    if (!subjectName) {
-      showToast('Please enter a subject / class name.', 'error');
-      return;
-    }
-    if (!meetLink || !meetLink.includes('meet.google.com')) {
-      showToast('Please enter a valid Google Meet link.', 'error');
-      return;
-    }
-
-    if (currentModalSlots.length === 0) {
-      showToast('Please add at least one schedule slot.', 'error');
-      return;
-    }
-
-    for (let i = 0; i < currentModalSlots.length; i++) {
-      const slot = currentModalSlots[i];
-      if (!slot.days || slot.days.length === 0) {
-        showToast(`Please select at least one day for Slot #${i + 1}`, 'error');
-        return;
-      }
-    }
-
-    const payloadSlots = currentModalSlots.map((slot) => {
-      let h = parseInt(slot.hour, 10);
-      if (slot.ampm === 'PM' && h < 12) h += 12;
-      if (slot.ampm === 'AM' && h === 12) h = 0;
-      const time24 = `${String(h).padStart(2, '0')}:${slot.minute}`;
-      return {
-        id: slot.id || undefined,
-        days: slot.days,
-        time: time24,
-        duration: parseInt(slot.duration || 60, 10),
-      };
-    });
-
-    const payload = {
-      name: subjectName,
-      link: meetLink,
-      enabled,
-      slots: payloadSlots,
-      deletedSlotIds,
-    };
-
-    try {
-      const res = await fetch('/api/timetable', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error);
-
-      showToast(`Schedule for "${subjectName}" saved (${payloadSlots.length} slot${payloadSlots.length > 1 ? 's' : ''})!`);
-      closeModal();
-      fetchTimetable();
-      fetchStatus();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
-
-  // Global window functions for card actions
-  window.toggleActiveClass = async function (id) {
-    try {
-      const res = await fetch(`/api/timetable/${id}/toggle`, { method: 'PATCH' });
-      const data = await res.json();
-      if (data.ok) {
-        showToast(`"${data.class.name}" ${data.class.enabled ? 'enabled' : 'disabled'}`);
-        fetchTimetable();
-        fetchStatus();
-      }
-    } catch {}
-  };
-
-  window.deleteClass = async function (id) {
-    if (!confirm('Are you sure you want to delete this scheduled class?')) return;
-    try {
-      const res = await fetch(`/api/timetable/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.ok) {
-        showToast('Class deleted');
-        fetchTimetable();
-        fetchStatus();
-      }
-    } catch {}
-  };
-
-  window.duplicateClass = function (id) {
-    const item = timetableData.find((c) => c.id === id);
-    if (!item) return;
-
-    isEditingId = null;
-    deletedSlotIds = [];
-    modalTitle.textContent = `Add Schedule for "${item.name}"`;
-    const subtitleEl = document.getElementById('modal-subtitle');
-    if (subtitleEl) subtitleEl.textContent = `Quickly add another day or time for this subject`;
-    const btnSaveText = document.getElementById('btn-save-class-text');
-    if (btnSaveText) btnSaveText.textContent = 'Add to Timetable';
-
-    document.getElementById('class-id').value = '';
-    document.getElementById('class-name').value = item.name || '';
-    document.getElementById('class-link').value = item.link || '';
-    document.getElementById('class-enabled').checked = item.enabled !== false;
-
-    let nextDays = ['mon', 'wed', 'fri'];
-    const itemDays = (Array.isArray(item.days) ? item.days : [item.days]).map((d) => String(d).toLowerCase().slice(0, 3));
-    if (itemDays.includes('mon') && !itemDays.includes('tue')) {
-      nextDays = ['tue', 'thu'];
-    } else if (itemDays.includes('sat')) {
-      nextDays = ['sun'];
-    }
-
-    currentModalSlots = [createDefaultSlot(nextDays, item.time12 || item.time || '11:00 AM', item.duration || 60, '')];
-    renderModalSlots();
-
-    classModal.style.display = 'flex';
-    const modalWin = document.querySelector('.modal-window');
-    if (modalWin) modalWin.scrollTop = 0;
-  };
-
-  window.editClass = function (id) {
-    const item = timetableData.find((c) => c.id === id);
-    if (!item) return;
-
-    isEditingId = id;
-    deletedSlotIds = [];
-    modalTitle.textContent = 'Edit Scheduled Class';
-    const subtitleEl = document.getElementById('modal-subtitle');
-    if (subtitleEl) subtitleEl.textContent = `Modify scheduled times, days, or add new slots for "${item.name}"`;
-    const btnSaveText = document.getElementById('btn-save-class-text');
-    if (btnSaveText) btnSaveText.textContent = 'Save Changes';
-
-    document.getElementById('class-id').value = item.id;
-    document.getElementById('class-name').value = item.name || '';
-    document.getElementById('class-link').value = item.link || '';
-    document.getElementById('class-enabled').checked = item.enabled !== false;
-
-    // Load related slots for the same subject if multiple exist
-    const subjectNameLower = (item.name || '').trim().toLowerCase();
-    const relatedSlots = timetableData.filter(
-      (c) => (c.name || '').trim().toLowerCase() === subjectNameLower
-    );
-
-    if (relatedSlots.length > 0) {
-      currentModalSlots = relatedSlots.map((c) => {
-        const itemDays = (Array.isArray(c.days) ? c.days : [c.days]).map((d) => String(d).toLowerCase().slice(0, 3));
-        return createDefaultSlot(itemDays, c.time12 || c.time, c.duration || 60, c.id);
-      });
-    } else {
-      const itemDays = (Array.isArray(item.days) ? item.days : [item.days]).map((d) => String(d).toLowerCase().slice(0, 3));
-      currentModalSlots = [createDefaultSlot(itemDays, item.time12 || item.time, item.duration || 60, item.id)];
-    }
-
-    renderModalSlots();
-    classModal.style.display = 'flex';
-    const modalWin = document.querySelector('.modal-window');
-    if (modalWin) modalWin.scrollTop = 0;
-  };
-
-  window.copyLink = function (link) {
-    navigator.clipboard.writeText(link);
-    showToast('Meeting link copied to clipboard!');
-  };
-
-  window.triggerImmediate = function (link, duration, name) {
-    if (confirm(`Start automated recording for "${name}" now?`)) {
-      startRecordingRequest(link, duration, name);
-    }
-  };
 
   // -------------------------------------------------------------
   // INSTANT RECORDING
@@ -952,6 +1210,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initial load & periodic polling
   fetchStatus();
+  fetchSubjects();
   fetchTimetable();
   fetchRecordings();
   fetchAccount();
@@ -1141,6 +1400,35 @@ document.addEventListener('DOMContentLoaded', () => {
       if (autoRejoinEl) autoRejoinEl.checked = settings.autoRejoinOnDisconnect !== false;
       const maxLobbyWaitEl = document.getElementById('setting-max-lobby-wait');
       if (maxLobbyWaitEl) maxLobbyWaitEl.value = settings.maxLobbyWaitMin !== undefined ? settings.maxLobbyWaitMin : 15;
+
+      // Windows startup status
+      await fetchStartupStatus();
+    } catch {}
+  }
+
+  // Fetch Windows Auto-Startup Status
+  async function fetchStartupStatus() {
+    try {
+      const res = await fetch('/api/startup');
+      const data = await res.json();
+      const badge = document.getElementById('startup-status-badge');
+      const desc = document.getElementById('startup-status-desc');
+      const btn = document.getElementById('btn-toggle-startup');
+      if (!badge || !desc || !btn) return;
+
+      if (data.enabled) {
+        badge.textContent = 'Active (Starts on Boot)';
+        badge.className = 'badge-success';
+        desc.textContent = 'Bot launches automatically in the background when your PC boots.';
+        btn.textContent = 'Disable Auto-Start';
+        btn.className = 'btn-secondary btn-sm';
+      } else {
+        badge.textContent = 'Disabled';
+        badge.className = 'badge-neutral';
+        desc.textContent = 'Bot does not launch on PC boot. Start manually when needed.';
+        btn.textContent = 'Enable Auto-Start';
+        btn.className = 'btn-primary btn-sm';
+      }
     } catch {}
   }
 
@@ -1274,6 +1562,27 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     } catch {
       showToast('Could not open default browser', 'error');
+    }
+  });
+
+  // Toggle Windows Auto-Startup
+  const btnToggleStartup = document.getElementById('btn-toggle-startup');
+  btnToggleStartup?.addEventListener('click', async () => {
+    btnToggleStartup.disabled = true;
+    try {
+      showToast('Updating Windows startup configuration...');
+      const res = await fetch('/api/startup/toggle', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        showToast(data.message || (data.enabled ? 'Enabled auto-startup on boot!' : 'Disabled auto-startup'));
+        await fetchStartupStatus();
+      } else {
+        showToast(data.error || 'Failed to toggle startup', 'error');
+      }
+    } catch {
+      showToast('Error toggling startup configuration', 'error');
+    } finally {
+      btnToggleStartup.disabled = false;
     }
   });
 });

@@ -12,12 +12,16 @@ const recordingRoutes = require('./recordingRoutes');
 const settingsRoutes = require('./settingsRoutes');
 const accountRoutes = require('./accountRoutes');
 const browserRoutes = require('./browserRoutes');
+const startupRoutes = require('./startupRoutes');
+const subjectRoutes = require('./subjectRoutes');
 
 router.use('/', statusRoutes);
 router.use('/', timetableRoutes);
+router.use('/', subjectRoutes);
 router.use('/', recordingRoutes);
 router.use('/', settingsRoutes);
 router.use('/', accountRoutes);
 router.use('/', browserRoutes);
+router.use('/', startupRoutes);
 
 module.exports = router;

@@ -292,6 +292,13 @@ async function checkAndTriggerSchedule() {
   const currentDay = ist.dayName;
   const currentHHMM = ist.hhmm;
 
+  // Prune any stale recording keys from previous days
+  for (const key of recordedToday) {
+    if (!key.includes(todayStr)) {
+      recordedToday.delete(key);
+    }
+  }
+
   for (const item of timetable) {
     if (!item.enabled) continue;
 

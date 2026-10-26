@@ -100,7 +100,7 @@
 
       <div class="metric-card">
         <div class="metric-header">
-          <span class="metric-label">TIMETABLE CLASSES</span>
+          <span class="metric-label">TIMETABLE SESSIONS</span>
           <span class="icon-chip">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           </span>
@@ -108,6 +108,19 @@
         <div class="metric-body">
           <h2 id="stat-total-classes" class="metric-main-text">0</h2>
           <p id="stat-active-classes" class="metric-subtext">0 active across Mon-Sun</p>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-header">
+          <span class="metric-label">CLASS CATALOG</span>
+          <span class="icon-chip">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          </span>
+        </div>
+        <div class="metric-body">
+          <h2 id="stat-total-subjects" class="metric-main-text">0</h2>
+          <p id="stat-subjects-summary" class="metric-subtext">Advance Engg Math, Robotics...</p>
         </div>
       </div>
 
@@ -131,12 +144,16 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         Weekly Timetable
       </button>
+      <button class="tab-btn" data-tab="subjects">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        Classes & Meetings Catalog
+      </button>
       <button class="tab-btn" data-tab="instant">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         Instant Record
       </button>
       <button class="tab-btn" data-tab="recordings">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
         Recordings Library
       </button>
       <button class="tab-btn" data-tab="settings">
@@ -147,7 +164,7 @@
 
     <!-- TAB 1: WEEKLY TIMETABLE -->
     <section id="tab-timetable" class="tab-content active">
-      <div class="section-toolbar">
+      <div class="section-toolbar timetable-toolbar">
         <div class="day-filters">
           <button class="day-filter active" data-day="all">All Days</button>
           <button class="day-filter" data-day="mon">Mon</button>
@@ -159,14 +176,108 @@
           <button class="day-filter" data-day="sun">Sun</button>
         </div>
 
-        <button id="btn-open-add-modal" class="btn-primary">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add New Class
-        </button>
+        <div class="toolbar-actions">
+          <button id="btn-quick-manage-subjects" class="btn-secondary btn-sm" title="Manage your class directory and Meet links">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Manage Classes
+          </button>
+          <button id="btn-open-add-modal" class="btn-primary">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span id="btn-open-add-label">+ Schedule Class</span>
+          </button>
+        </div>
       </div>
 
       <!-- Schedule Cards Grid -->
       <div id="timetable-grid" class="cards-grid">
+        <!-- Rendered dynamically via app.js -->
+      </div>
+    </section>
+
+    <!-- TAB 2: CLASS & MEETING DIRECTORY (VARIETY OF CLASSES) -->
+    <section id="tab-subjects" class="tab-content">
+      <div class="section-toolbar">
+        <div>
+          <h2 style="font-size: 1.25rem; font-weight: 700;">Classes & Meetings Catalog</h2>
+          <p class="section-subtext">Add the variety of classes you attend (Advance Engineering Math, Robotics, etc.) and their Google Meet links once. Then schedule them in seconds without re-typing links!</p>
+        </div>
+
+        <button id="btn-toggle-subject-editor" class="btn-primary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span id="btn-toggle-subject-text">+ Add New Class Variety</span>
+        </button>
+      </div>
+
+      <!-- Add / Edit Class Drawer Card -->
+      <div id="subject-editor-card" class="subject-editor-card" style="display: none;">
+        <div class="editor-header">
+          <div class="editor-title-wrap">
+            <div class="editor-icon" id="editor-badge-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            </div>
+            <div>
+              <h3 id="subject-editor-title">Register Class / Meeting</h3>
+              <p class="helper-text">Define meeting name and Google Meet link to select easily in your timetable.</p>
+            </div>
+          </div>
+          <button type="button" id="btn-close-subject-editor" class="btn-close" title="Close form">&times;</button>
+        </div>
+
+        <form id="subject-editor-form" class="subject-form-layout">
+          <input type="hidden" id="subject-edit-id" value="">
+
+          <div class="form-row">
+            <div class="form-group flex-2">
+              <label for="subject-input-name">Class / Meeting Name</label>
+              <input type="text" id="subject-input-name" placeholder="e.g. Advance Engineering Math, Robotics, Physics" required autocomplete="off">
+            </div>
+
+            <div class="form-group flex-3">
+              <label for="subject-input-link">Google Meet URL</label>
+              <input type="url" id="subject-input-link" placeholder="https://meet.google.com/abc-defg-hij" required autocomplete="off">
+            </div>
+          </div>
+
+          <div class="form-row align-end-wrap">
+            <div class="form-group">
+              <label>Default Duration</label>
+              <div class="duration-quick-selector">
+                <input type="number" id="subject-input-duration" value="60" min="5" max="360" class="input-duration-box" required>
+                <span class="unit-text">min</span>
+                <div class="chips-group">
+                  <button type="button" class="chip-duration-sm" onclick="setSubjectFormDuration(45)">45m</button>
+                  <button type="button" class="chip-duration-sm active" onclick="setSubjectFormDuration(60)">60m</button>
+                  <button type="button" class="chip-duration-sm" onclick="setSubjectFormDuration(90)">90m</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Color Badge</label>
+              <div class="color-picker-circles" id="color-picker-circles">
+                <button type="button" class="color-circle active" data-color="#6366f1" style="background: #6366f1;" title="Indigo"></button>
+                <button type="button" class="color-circle" data-color="#06b6d4" style="background: #06b6d4;" title="Cyan"></button>
+                <button type="button" class="color-circle" data-color="#10b981" style="background: #10b981;" title="Emerald"></button>
+                <button type="button" class="color-circle" data-color="#f59e0b" style="background: #f59e0b;" title="Amber"></button>
+                <button type="button" class="color-circle" data-color="#ec4899" style="background: #ec4899;" title="Rose"></button>
+                <button type="button" class="color-circle" data-color="#8b5cf6" style="background: #8b5cf6;" title="Violet"></button>
+              </div>
+              <input type="hidden" id="subject-input-color" value="#6366f1">
+            </div>
+
+            <div class="form-actions-end">
+              <button type="button" id="btn-cancel-subject-editor" class="btn-secondary">Cancel</button>
+              <button type="submit" id="btn-submit-subject" class="btn-primary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span id="btn-submit-subject-text">Save Class to Directory</span>
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Subject Cards Grid -->
+      <div id="subjects-grid" class="subjects-cards-grid">
         <!-- Rendered dynamically via app.js -->
       </div>
     </section>
@@ -477,21 +588,52 @@
             <button type="submit" class="btn-primary btn-sm">Save Rejoin Settings</button>
           </form>
         </div>
+
+        <!-- 7. Windows Auto-Startup on PC Boot Card -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <div class="settings-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </div>
+            <div>
+              <h3>Windows Auto-Startup on Boot</h3>
+              <p>Automatically launch the recorder bot daemon silently in the background whenever your PC starts up.</p>
+            </div>
+          </div>
+
+          <div class="settings-form">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;">
+              <div>
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                  <strong style="font-size: 14px;">Windows Startup Status:</strong>
+                  <span id="startup-status-badge" class="badge-neutral">Checking...</span>
+                </div>
+                <small id="startup-status-desc" class="helper-text" style="margin: 0;">Checking Windows startup configuration...</small>
+              </div>
+              <button type="button" id="btn-toggle-startup" class="btn-primary btn-sm" style="min-width: 150px;">
+                Enable Auto-Start
+              </button>
+            </div>
+            <p class="tip-text" style="margin-top: 14px;">
+              💡 <strong>One-Click Startup:</strong> When enabled, the bot runs quietly in the background on PC boot with zero console windows. All scheduled classes in your timetable are monitored and recorded hands-free. You can also double-click <code>ENABLE_WINDOWS_STARTUP.bat</code> or <code>START_RECORDER.bat</code> in the project folder anytime.
+            </p>
+          </div>
+        </div>
       </div>
     </section>
   </main>
 
-  <!-- ADD / EDIT CLASS MODAL -->
+  <!-- STREAMLINED CLUTTER-FREE SCHEDULE CLASS MODAL -->
   <div id="class-modal" class="modal-backdrop" style="display: none;">
-    <div class="modal-window">
+    <div class="modal-window modal-window-clean">
       <div class="modal-header">
         <div class="modal-title-wrapper">
           <div class="modal-title-icon" id="modal-title-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           </div>
           <div>
-            <h3 id="modal-title">Edit Scheduled Class</h3>
-            <span id="modal-subtitle" class="modal-subtitle">Configure class timing, Meet link, and weekly schedule</span>
+            <h3 id="modal-title">Schedule a Class</h3>
+            <span id="modal-subtitle" class="modal-subtitle">Select class, choose day and time, and set duration</span>
           </div>
         </div>
         <button id="btn-close-modal" class="btn-close" title="Close window">&times;</button>
@@ -499,56 +641,164 @@
 
       <form id="class-form">
         <input type="hidden" id="class-id">
+        <input type="hidden" id="class-name">
+        <input type="hidden" id="class-link">
 
+        <!-- STEP 1: Select Class from Catalog -->
         <div class="form-group">
           <div class="label-with-hint">
-            <label for="class-name">Subject / Class Name</label>
-            <span class="field-hint">Select existing subject to auto-fill Meet link</span>
+            <label for="schedule-class-select">1. Select Class / Meeting Variety</label>
+            <a href="javascript:void(0)" id="btn-modal-manage-classes" class="field-link-action">
+              + Manage / Add Variety
+            </a>
           </div>
-          <input type="text" id="class-name" list="existing-subjects-list" placeholder="e.g. Mathematics, Physics, AEM" required autocomplete="off">
-          <datalist id="existing-subjects-list"></datalist>
-        </div>
+          <select id="schedule-class-select" class="select-styled-lg" required>
+            <!-- Populated dynamically: Advance Engineering Math, Robotics, etc. -->
+          </select>
 
-        <div class="form-group">
-          <label for="class-link">Google Meet URL</label>
-          <input type="url" id="class-link" placeholder="https://meet.google.com/abc-defg-hij" required>
-        </div>
-
-        <!-- Multi-Day & Multi-Time Schedule Slots Section -->
-        <div class="form-group slots-group">
-          <div class="slots-header-bar">
-            <div>
-              <label class="slots-title">Weekly Schedule & Timings</label>
-              <p class="slots-subtitle">Schedule this subject on multiple days at different times with ease.</p>
+          <!-- Linked Google Meet URL Info Card -->
+          <div id="schedule-link-preview" class="schedule-link-preview">
+            <div class="link-preview-left">
+              <span class="preview-dot" id="schedule-dot-indicator"></span>
+              <span class="preview-url-text" id="schedule-link-text">https://meet.google.com/...</span>
             </div>
-            <button type="button" id="btn-add-schedule-slot" class="btn-secondary btn-sm btn-add-slot-header" title="Add another day and time slot for this subject">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              + Add Slot
-            </button>
+            <div class="link-preview-actions">
+              <button type="button" id="btn-copy-preview-link" class="btn-icon-xs" title="Copy Google Meet link">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Copy
+              </button>
+              <a id="schedule-link-test-btn" href="#" target="_blank" class="btn-icon-xs" title="Test Google Meet link in new tab">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+                Test Link
+              </a>
+            </div>
           </div>
 
-          <!-- Dynamic Slots List Rendered by app.js -->
-          <div id="schedule-slots-container" class="schedule-slots-container"></div>
-
-          <button type="button" id="btn-add-schedule-slot-bottom" class="btn-dashed-add" title="Add another day/time slot for this same subject">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            <span>+ Add Another Schedule (Different Day / Time for this Subject)</span>
-          </button>
+          <!-- Quick Inline Creator Drawer (if user selects "+ Add New Class..." or clicks action) -->
+          <div id="inline-create-class-panel" class="inline-create-panel" style="display: none;">
+            <div class="inline-panel-header">
+              <span>+ Quick Register New Class Variety</span>
+              <button type="button" id="btn-close-inline-panel" class="btn-close-xs">&times;</button>
+            </div>
+            <div class="form-row" style="margin-bottom: 8px;">
+              <div class="form-group flex-2">
+                <input type="text" id="inline-class-name" placeholder="Class Name (e.g. Robotics, AEM)" autocomplete="off">
+              </div>
+              <div class="form-group flex-3">
+                <input type="url" id="inline-class-link" placeholder="Google Meet link (https://meet.google.com/...)" autocomplete="off">
+              </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+              <button type="button" id="btn-inline-cancel" class="btn-secondary btn-sm">Cancel</button>
+              <button type="button" id="btn-inline-save-class" class="btn-primary btn-sm">+ Save to Catalog & Select</button>
+            </div>
+          </div>
         </div>
 
-        <div class="form-group checkbox-group" style="margin-top: 18px;">
+        <!-- STEP 2: Select Weekday(s) -->
+        <div class="form-group">
+          <div class="label-with-hint">
+            <label>2. Select Day(s) of Week</label>
+            <div class="day-quick-presets">
+              <button type="button" class="btn-preset-sm" onclick="setScheduleDaysPreset('today')">Today</button>
+              <button type="button" class="btn-preset-sm" onclick="setScheduleDaysPreset('weekdays')">Mon - Fri</button>
+              <button type="button" class="btn-preset-sm" onclick="setScheduleDaysPreset('mwf')">Mon, Wed, Fri</button>
+              <button type="button" class="btn-preset-sm" onclick="setScheduleDaysPreset('tts')">Tue, Thu, Sat</button>
+              <button type="button" class="btn-preset-sm" onclick="setScheduleDaysPreset('all')">Everyday</button>
+            </div>
+          </div>
+          <div class="day-selector-pills">
+            <label class="day-select-pill">
+              <input type="checkbox" name="sched_day" value="mon">
+              <span>Mon</span>
+            </label>
+            <label class="day-select-pill">
+              <input type="checkbox" name="sched_day" value="tue">
+              <span>Tue</span>
+            </label>
+            <label class="day-select-pill">
+              <input type="checkbox" name="sched_day" value="wed">
+              <span>Wed</span>
+            </label>
+            <label class="day-select-pill">
+              <input type="checkbox" name="sched_day" value="thu">
+              <span>Thu</span>
+            </label>
+            <label class="day-select-pill">
+              <input type="checkbox" name="sched_day" value="fri">
+              <span>Fri</span>
+            </label>
+            <label class="day-select-pill">
+              <input type="checkbox" name="sched_day" value="sat">
+              <span>Sat</span>
+            </label>
+            <label class="day-select-pill">
+              <input type="checkbox" name="sched_day" value="sun">
+              <span>Sun</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- STEP 3 & 4: Select Timing & Duration ("only select which class for how much time") -->
+        <div class="form-row time-duration-row">
+          <div class="form-group flex-1">
+            <div class="label-with-hint">
+              <label for="schedule-time-native">3. Class Start Time</label>
+              <span class="tz-badge-subtle">🇮🇳 IST</span>
+            </div>
+            <input type="time" id="schedule-time-native" class="time-input-large" required value="10:00">
+
+            <!-- Common Quick Start Time Chips -->
+            <div class="time-quick-chips">
+              <button type="button" class="chip-time" onclick="setScheduleTime('09:00')">09:00 AM</button>
+              <button type="button" class="chip-time" onclick="setScheduleTime('10:00')">10:00 AM</button>
+              <button type="button" class="chip-time" onclick="setScheduleTime('11:30')">11:30 AM</button>
+              <button type="button" class="chip-time" onclick="setScheduleTime('13:30')">01:30 PM</button>
+              <button type="button" class="chip-time" onclick="setScheduleTime('14:30')">02:30 PM</button>
+              <button type="button" class="chip-time" onclick="setScheduleTime('15:50')">03:50 PM</button>
+            </div>
+          </div>
+
+          <div class="form-group flex-1">
+            <label for="schedule-duration-input">4. For How Much Time (Duration)?</label>
+            <div class="duration-input-wrapper">
+              <input type="number" id="schedule-duration-input" class="duration-input-large" value="60" min="5" max="360" required>
+              <span class="unit-text-large">minutes</span>
+            </div>
+
+            <!-- Common Duration Chips -->
+            <div class="duration-quick-chips">
+              <button type="button" class="chip-duration" onclick="setScheduleDuration(45)">45m</button>
+              <button type="button" class="chip-duration" onclick="setScheduleDuration(50)">50m</button>
+              <button type="button" class="chip-duration active" onclick="setScheduleDuration(60)">60m</button>
+              <button type="button" class="chip-duration" onclick="setScheduleDuration(90)">90m</button>
+              <button type="button" class="chip-duration" onclick="setScheduleDuration(120)">2 hrs</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dynamic Live Summary Card -->
+        <div class="schedule-summary-card">
+          <div class="summary-icon">⏰</div>
+          <div class="summary-details">
+            <span class="summary-title" id="sched-preview-title">Advance Engineering Math</span>
+            <span class="summary-sub" id="sched-preview-timing">Every Mon, Wed, Fri at 10:00 AM IST (60 mins)</span>
+          </div>
+        </div>
+
+        <div class="form-group checkbox-group" style="margin-top: 14px;">
           <label class="switch-control">
             <input type="checkbox" id="class-enabled" checked>
             <span class="switch-slider"></span>
           </label>
-          <span class="switch-label">Enable automated recording for this class schedule</span>
+          <span class="switch-label">Enable automated recording for this class</span>
         </div>
 
         <div class="modal-footer">
           <button type="button" id="btn-cancel-modal" class="btn-secondary">Cancel</button>
           <button type="submit" id="btn-save-class" class="btn-primary">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            <span id="btn-save-class-text">Save Schedule</span>
+            <span id="btn-save-class-text">Schedule Class</span>
           </button>
         </div>
       </form>

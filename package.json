@@ -9,7 +9,9 @@
         "start:bot": "node backend/src/index.js",
         "schedule": "node backend/src/scheduler.js",
         "schedule:list": "node backend/src/manageTimetable.js list",
-        "schedule:add": "node backend/src/manageTimetable.js add"
+        "schedule:add": "node backend/src/manageTimetable.js add",
+        "startup:enable": "cmd /c ENABLE_WINDOWS_STARTUP.bat",
+        "startup:disable": "cmd /c DISABLE_WINDOWS_STARTUP.bat"
     },
     "devDependencies": {
         "@types/chrome": "^0.0.326",
