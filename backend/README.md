@@ -11,6 +11,7 @@ backend/
 ├── package.json              # Backend dependencies (Express, Puppeteer)
 ├── README.md                 # This documentation
 ├── timetable.json            # Active scheduled weekly classes & meetings
+├── subjects.json             # Variety of classes / subjects catalog & Meet URLs
 ├── settings.json             # Bot configurations & persistent preferences
 ├── recordings/               # Output directory for video (.webm) and transcripts (.txt, .vtt)
 ├── bot_profile/              # Chromium profile preserving authenticated Google session
@@ -19,27 +20,32 @@ backend/
 │   ├── style.css
 │   └── app.js
 └── src/
-    ├── config/               # Configuration & flags
-    │   └── index.js          # Central paths, Chrome flags, extension IDs
+    ├── config.js             # Central paths, Chrome flags, extension IDs
     ├── models/               # [MODEL] Data access & persistence layer
-    │   ├── timetableModel.js # Timetable queries, CRUD, multi-slot builder, next upcoming
+    │   ├── subjectModel.js   # Class catalog directory (Advance Engg Math, Robotics, etc.)
+    │   ├── timetableModel.js # Timetable queries, CRUD, scheduling, next upcoming
     │   ├── settingsModel.js  # App settings, defaults, storage path, auto-leave rules
     │   ├── accountModel.js   # Google account detection, Chrome profile import, login
+    │   ├── startupModel.js   # Windows registry auto-boot startup management
     │   └── recordingModel.js # Media file scanning, metadata, file deletion
     ├── views/ -> public/     # Static presentation layer served by Express
     ├── controllers/          # [CONTROLLER] Request handling & response serialization
     │   ├── statusController.js    # Bot status & daemon toggle
+    │   ├── subjectController.js   # Class catalog CRUD endpoints
     │   ├── timetableController.js # Timetable CRUD endpoints
     │   ├── recordingController.js # Manual start/stop and file management
     │   ├── settingsController.js  # App preferences get/update
+    │   ├── startupController.js   # Windows auto-startup toggle & status
     │   ├── accountController.js   # Google auth, 1-click import, logout
     │   └── browserController.js   # System browser launcher
     ├── routes/               # Dedicated routing definitions
     │   ├── index.js          # Main API router mounting all modules on /api
     │   ├── statusRoutes.js
+    │   ├── subjectRoutes.js
     │   ├── timetableRoutes.js
     │   ├── recordingRoutes.js
     │   ├── settingsRoutes.js
+    │   ├── startupRoutes.js
     │   ├── accountRoutes.js
     │   └── browserRoutes.js
     ├── services/             # Core automation engines & background daemons

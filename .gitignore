@@ -12,6 +12,7 @@ backend/recordings/
 
 # Local state & configuration
 backend/timetable.json
+backend/subjects.json
 backend/settings.json
 
 # Logs and system files

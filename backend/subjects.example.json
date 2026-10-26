@@ -1,0 +1,16 @@
+[
+  {
+    "id": "subj-aem",
+    "name": "Advance Engineering Math",
+    "link": "https://meet.google.com/oqn-fqdh-stc",
+    "color": "#6366f1",
+    "defaultDuration": 60
+  },
+  {
+    "id": "subj-robotics",
+    "name": "Robotics",
+    "link": "https://meet.google.com/rob-otic-bot",
+    "color": "#ec4899",
+    "defaultDuration": 60
+  }
+]
