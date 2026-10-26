@@ -3,28 +3,31 @@ setlocal
 title Add Google Meet Recorder to Desktop
 color 0A
 
-:: Target batch file
-set "TARGET_BAT=%~dp0START.bat"
+set "TARGET_EXE=%~dp0Google Meet Recorder.exe"
 set "DESKTOP_PATH=%USERPROFILE%\Desktop\Google Meet Recorder.lnk"
+set "ICON_PATH=%~dp0app.ico"
 
 echo ========================================================================
-echo        ADD GOOGLE MEET RECORDER SHORTCUT TO DESKTOP
+echo        ADD GOOGLE MEET RECORDER APP TO DESKTOP
 echo ========================================================================
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
     "$ws = New-Object -ComObject WScript.Shell; " ^
     "$s = $ws.CreateShortcut('%DESKTOP_PATH%'); " ^
-    "$s.TargetPath = '%TARGET_BAT%'; " ^
+    "$s.TargetPath = '%TARGET_EXE%'; " ^
     "$s.WorkingDirectory = '%~dp0'; " ^
-    "$s.Description = 'One-click launcher for Google Meet Recording Bot & Dashboard'; " ^
+    "$s.IconLocation = '%ICON_PATH%'; " ^
+    "$s.Description = 'Google Meet Recording Bot & Web Dashboard (Tray App)'; " ^
     "$s.Save()"
 
 if exist "%DESKTOP_PATH%" (
-    echo [SUCCESS] Desktop shortcut created successfully!
+    echo [SUCCESS] Windows App Desktop shortcut updated successfully!
     echo.
-    echo You can now double-click 'Google Meet Recorder' directly on your
-    echo Desktop anytime to start the bot and open your dashboard.
+    echo Double-clicking 'Google Meet Recorder' on your Desktop will now:
+    echo  - Run quietly in your Windows 11 System Tray (notification area)
+    echo  - Automatically open your Web Dashboard at http://localhost:3000
+    echo  - Let you easily stop or restart it with a right-click on the tray icon!
 ) else (
     echo [ERROR] Could not create desktop shortcut.
 )
