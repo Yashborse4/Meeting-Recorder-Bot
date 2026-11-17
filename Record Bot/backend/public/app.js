@@ -39,7 +39,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const scheduleClassSelect = document.getElementById('schedule-class-select');
   const scheduleLinkTestBtn = document.getElementById('schedule-link-test-btn');
   const scheduleTimeNative = document.getElementById('schedule-time-native');
+  const scheduleEndTimeNative = document.getElementById('schedule-endtime-native');
+  const startTimeHour = document.getElementById('start-time-hour');
+  const startTimeMinute = document.getElementById('start-time-minute');
+  const btnStartAm = document.getElementById('btn-start-am');
+  const btnStartPm = document.getElementById('btn-start-pm');
+  const endTimeHour = document.getElementById('end-time-hour');
+  const endTimeMinute = document.getElementById('end-time-minute');
+  const btnEndAm = document.getElementById('btn-end-am');
+  const btnEndPm = document.getElementById('btn-end-pm');
+  const scheduleDurationBadge = document.getElementById('schedule-duration-badge');
   const scheduleDurationInput = document.getElementById('schedule-duration-input');
+  const scheduleMinParticipants = document.getElementById('schedule-min-participants');
+  const participantThresholdBox = document.getElementById('participant-threshold-box');
   const schedPreviewTitle = document.getElementById('sched-preview-title');
   const schedPreviewTiming = document.getElementById('sched-preview-timing');
   const classEnabledInput = document.getElementById('class-enabled');
@@ -627,17 +639,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<span class="day-tag ${isActive ? 'active' : ''}">${day}</span>`;
       }).join('');
 
-      let timeRange = formatTime12(item.time12 || item.time);
-      if (item.time && item.duration) {
+      const startTime12 = formatTime12Plain(item.time12 || item.time);
+      let endStr = '';
+      let durMins = item.duration || 60;
+
+      if (item.endTime) {
+        endStr = formatTime12Plain(item.endTime12 || item.endTime);
+      } else if (item.time) {
         const [hStr, mStr] = item.time.split(':');
-        let totalMins = parseInt(hStr, 10) * 60 + parseInt(mStr, 10) + parseInt(item.duration, 10);
+        let totalMins = parseInt(hStr, 10) * 60 + parseInt(mStr, 10) + durMins;
         let endH = Math.floor(totalMins / 60) % 24;
         let endM = totalMins % 60;
         let endAmpm = endH >= 12 ? 'PM' : 'AM';
         let endH12 = endH % 12 || 12;
-        let endStr = `${String(endH12).padStart(2, '0')}:${String(endM).padStart(2, '0')} ${endAmpm}`;
-        timeRange = `${formatTime12Plain(item.time12 || item.time)} - ${endStr} <span class="tz-badge">IST</span>`;
+        endStr = `${String(endH12).padStart(2, '0')}:${String(endM).padStart(2, '0')} ${endAmpm}`;
       }
+
+      const timeRange = endStr ? `${startTime12} – ${endStr} <span class="tz-badge">IST</span>` : `${formatTime12(item.time12 || item.time)}`;
+      const durText = item.formattedDuration || formatDurationBadgeText(durMins).replace('⏱️ ', '');
 
       return `
         <div class="class-card ${!item.enabled ? 'disabled' : ''}">
@@ -657,7 +676,12 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="class-card-time">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
               <span>${timeRange}</span>
-              <span class="class-duration-badge">(${item.duration || 60} mins)</span>
+              <span class="class-duration-badge">(${durText} allowed)</span>
+            </div>
+
+            <div class="class-leave-rule-tag" title="Smart Auto-Leave rule">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              <span>${escapeHtml(item.leaveRuleText || (item.leaveCondition === 'endTime' ? 'Leaves at end time' : 'Leaves when < 5 people or on time'))}</span>
             </div>
 
             <div class="class-days-list">
@@ -794,24 +818,240 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  function calculateMinutesDiff(startHHMM, endHHMM) {
+    if (!startHHMM || !endHHMM) return 60;
+    const [sh, sm] = startHHMM.split(':').map((n) => parseInt(n, 10));
+    const [eh, em] = endHHMM.split(':').map((n) => parseInt(n, 10));
+    let startTotal = sh * 60 + sm;
+    let endTotal = eh * 60 + em;
+    if (endTotal <= startTotal) {
+      endTotal += 24 * 60; // Spans overnight
+    }
+    return Math.max(5, endTotal - startTotal);
+  }
+
+  function addMinutesToHHMM(startHHMM, mins) {
+    if (!startHHMM) return '11:00';
+    const [sh, sm] = startHHMM.split(':').map((n) => parseInt(n, 10));
+    const total = (sh * 60 + sm + parseInt(mins || '60', 10)) % (24 * 60);
+    const eh = Math.floor(total / 60);
+    const em = total % 60;
+    return `${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`;
+  }
+
+  function formatDurationBadgeText(mins) {
+    const totalM = parseInt(mins || '60', 10);
+    const h = Math.floor(totalM / 60);
+    const m = totalM % 60;
+    if (h > 0 && m > 0) return `⏱️ ${h} hr ${m} min (${totalM}m)`;
+    if (h > 0) return `⏱️ ${h} hr (${totalM}m)`;
+    return `⏱️ ${m} mins`;
+  }
+
+  function syncTimeDurationUI() {
+    const startTime = scheduleTimeNative?.value || '10:00';
+    const endTime = scheduleEndTimeNative?.value || '11:00';
+    const diffMins = calculateMinutesDiff(startTime, endTime);
+
+    if (scheduleDurationInput) scheduleDurationInput.value = diffMins;
+    if (scheduleDurationBadge) {
+      scheduleDurationBadge.textContent = formatDurationBadgeText(diffMins);
+    }
+
+    document.querySelectorAll('.duration-quick-chips .chip-duration').forEach((c) => {
+      const text = c.textContent.trim();
+      const match =
+        (diffMins === 45 && text.includes('45m')) ||
+        (diffMins === 50 && text.includes('50m')) ||
+        (diffMins === 60 && text.includes('1 hr')) ||
+        (diffMins === 90 && text.includes('1.5 hr')) ||
+        (diffMins === 120 && text.includes('2 hr'));
+      c.classList.toggle('active', !!match);
+    });
+
+    updateSchedulePreviewSummary();
+  }
+
+  function convert12to24(hour12, minute, ampm) {
+    let h = parseInt(hour12 || '10', 10);
+    const m = String(minute || '00').padStart(2, '0');
+    if (ampm === 'PM') {
+      if (h < 12) h += 12;
+    } else {
+      // AM
+      if (h === 12) h = 0;
+    }
+    return `${String(h).padStart(2, '0')}:${m}`;
+  }
+
+  function convert24to12(hhmm) {
+    if (!hhmm) return { hour: '10', minute: '00', ampm: 'AM' };
+    const [hStr, mStr] = String(hhmm).split(':');
+    let h = parseInt(hStr, 10);
+    const m = mStr ? mStr.padStart(2, '0') : '00';
+    if (isNaN(h)) return { hour: '10', minute: '00', ampm: 'AM' };
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return {
+      hour: String(h).padStart(2, '0'),
+      minute: m,
+      ampm: ampm,
+    };
+  }
+
+  function ensureMinuteOption(selectElem, minStr) {
+    if (!selectElem || !minStr) return;
+    const padded = String(minStr).padStart(2, '0');
+    const exists = Array.from(selectElem.options).some((opt) => opt.value === padded);
+    if (!exists) {
+      const opt = document.createElement('option');
+      opt.value = padded;
+      opt.textContent = padded;
+      selectElem.appendChild(opt);
+    }
+  }
+
+  window.setStartAmPm = function (ampm) {
+    if (btnStartAm) btnStartAm.classList.toggle('active', ampm === 'AM');
+    if (btnStartPm) btnStartPm.classList.toggle('active', ampm === 'PM');
+
+    const h = startTimeHour?.value || '10';
+    const m = startTimeMinute?.value || '00';
+    const hhmm24 = convert12to24(h, m, ampm);
+    if (scheduleTimeNative) scheduleTimeNative.value = hhmm24;
+
+    document.querySelectorAll('.chip-time').forEach((c) => {
+      const [ch, cm] = hhmm24.split(':');
+      const h12 = (parseInt(ch, 10) % 12 || 12).toString().padStart(2, '0');
+      const ampmStr = parseInt(ch, 10) >= 12 ? 'PM' : 'AM';
+      c.classList.toggle('active', c.textContent.trim().startsWith(`${h12}:${cm} ${ampmStr}`));
+    });
+
+    const currentDur = parseInt(scheduleDurationInput?.value || '60', 10);
+    if (scheduleEndTimeNative) {
+      window.setScheduleEndTime(addMinutesToHHMM(hhmm24, currentDur));
+    }
+    syncTimeDurationUI();
+  };
+
+  window.setEndAmPm = function (ampm) {
+    if (btnEndAm) btnEndAm.classList.toggle('active', ampm === 'AM');
+    if (btnEndPm) btnEndPm.classList.toggle('active', ampm === 'PM');
+
+    const h = endTimeHour?.value || '11';
+    const m = endTimeMinute?.value || '30';
+    const hhmm24 = convert12to24(h, m, ampm);
+    if (scheduleEndTimeNative) scheduleEndTimeNative.value = hhmm24;
+
+    document.querySelectorAll('.chip-endtime').forEach((c) => {
+      const [ch, cm] = hhmm24.split(':');
+      const h12 = (parseInt(ch, 10) % 12 || 12).toString().padStart(2, '0');
+      const ampmStr = parseInt(ch, 10) >= 12 ? 'PM' : 'AM';
+      c.classList.toggle('active', c.textContent.trim().startsWith(`${h12}:${cm} ${ampmStr}`));
+    });
+
+    syncTimeDurationUI();
+  };
+
   window.setScheduleTime = function (hhmm) {
-    if (!scheduleTimeNative) return;
-    scheduleTimeNative.value = hhmm;
+    if (!hhmm) return;
+    if (scheduleTimeNative) scheduleTimeNative.value = hhmm;
+
+    const { hour, minute, ampm } = convert24to12(hhmm);
+    if (startTimeHour) startTimeHour.value = hour;
+    ensureMinuteOption(startTimeMinute, minute);
+    if (startTimeMinute) startTimeMinute.value = minute;
+    if (btnStartAm) btnStartAm.classList.toggle('active', ampm === 'AM');
+    if (btnStartPm) btnStartPm.classList.toggle('active', ampm === 'PM');
+
     document.querySelectorAll('.chip-time').forEach((c) => {
       const [h, m] = hhmm.split(':');
       const h12 = (parseInt(h, 10) % 12 || 12).toString().padStart(2, '0');
-      c.classList.toggle('active', c.textContent.trim().startsWith(`${h12}:${m}`));
+      const ampmStr = parseInt(h, 10) >= 12 ? 'PM' : 'AM';
+      c.classList.toggle('active', c.textContent.trim().startsWith(`${h12}:${m} ${ampmStr}`));
     });
+
+    const currentDur = parseInt(scheduleDurationInput?.value || '60', 10);
+    if (scheduleEndTimeNative) {
+      window.setScheduleEndTime(addMinutesToHHMM(hhmm, currentDur));
+    }
+    syncTimeDurationUI();
+  };
+
+  window.setScheduleEndTime = function (hhmm) {
+    if (!hhmm) return;
+    if (scheduleEndTimeNative) scheduleEndTimeNative.value = hhmm;
+
+    const { hour, minute, ampm } = convert24to12(hhmm);
+    if (endTimeHour) endTimeHour.value = hour;
+    ensureMinuteOption(endTimeMinute, minute);
+    if (endTimeMinute) endTimeMinute.value = minute;
+    if (btnEndAm) btnEndAm.classList.toggle('active', ampm === 'AM');
+    if (btnEndPm) btnEndPm.classList.toggle('active', ampm === 'PM');
+
+    document.querySelectorAll('.chip-endtime').forEach((c) => {
+      const [h, m] = hhmm.split(':');
+      const h12 = (parseInt(h, 10) % 12 || 12).toString().padStart(2, '0');
+      const ampmStr = parseInt(h, 10) >= 12 ? 'PM' : 'AM';
+      c.classList.toggle('active', c.textContent.trim().startsWith(`${h12}:${m} ${ampmStr}`));
+    });
+
+    syncTimeDurationUI();
+  };
+
+  window.setLeaveCondition = function (cond) {
+    const radio = document.querySelector(`input[name="sched_leave_condition"][value="${cond}"]`);
+    if (radio) radio.checked = true;
+
+    document.querySelectorAll('.leave-condition-radios .radio-card').forEach((card) => {
+      const input = card.querySelector('input[type="radio"]');
+      card.classList.toggle('active', input && input.value === cond);
+    });
+
+    if (participantThresholdBox) {
+      if (cond === 'endTime') {
+        participantThresholdBox.classList.add('hidden');
+      } else {
+        participantThresholdBox.classList.remove('hidden');
+      }
+    }
+
     updateSchedulePreviewSummary();
   };
 
-  window.setScheduleDuration = function (mins) {
+  function updateThresholdHelperText(num) {
+    const helper = document.getElementById('threshold-helper-text');
+    if (helper) {
+      helper.innerHTML = `🚪 If students leave early and only <strong>${num} or fewer people</strong> remain, the bot will auto-leave after a brief grace period.`;
+    }
+  }
+
+  window.setLeaveParticipantThreshold = function (num) {
+    const val = parseInt(num, 10) || 5;
+    if (scheduleMinParticipants) {
+      scheduleMinParticipants.value = val;
+    }
+    document.querySelectorAll('.chip-threshold').forEach((chip) => {
+      const chipNum = parseInt(chip.textContent, 10);
+      chip.classList.toggle('active', chipNum === val);
+    });
+    updateThresholdHelperText(val);
+    updateSchedulePreviewSummary();
+  };
+
+  window.setScheduleDurationMinutes = function (mins) {
     if (!scheduleDurationInput) return;
     scheduleDurationInput.value = mins;
-    document.querySelectorAll('.duration-quick-chips .chip-duration').forEach((c) => {
-      c.classList.toggle('active', parseInt(c.textContent, 10) === mins || (mins === 120 && c.textContent.includes('2 hr')));
-    });
-    updateSchedulePreviewSummary();
+
+    const startTime = scheduleTimeNative?.value || '10:00';
+    if (scheduleEndTimeNative) {
+      scheduleEndTimeNative.value = addMinutesToHHMM(startTime, mins);
+    }
+    syncTimeDurationUI();
+  };
+
+  window.setScheduleDuration = function (mins) {
+    window.setScheduleDurationMinutes(mins);
   };
 
   window.setScheduleDaysPreset = function (preset) {
@@ -855,11 +1095,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const timeVal = scheduleTimeNative?.value || '10:00';
+    const endTimeVal = scheduleEndTimeNative?.value || addMinutesToHHMM(timeVal, 60);
     const durationVal = parseInt(scheduleDurationInput?.value || '60', 10);
     const time12Str = formatTime12Plain(timeVal);
+    const endTime12Str = formatTime12Plain(endTimeVal);
+    const humanDuration = formatDurationBadgeText(durationVal).replace('⏱️ ', '');
+
+    const leaveCond = document.querySelector('input[name="sched_leave_condition"]:checked')?.value || 'both';
+    const leaveThresh = parseInt(scheduleMinParticipants?.value || '5', 10);
+
+    let leaveSummary = '';
+    if (leaveCond === 'both') {
+      leaveSummary = ` • Leaves when < ${leaveThresh} people or at ${endTime12Str}`;
+    } else if (leaveCond === 'participants') {
+      leaveSummary = ` • Leaves when < ${leaveThresh} people`;
+    } else if (leaveCond === 'endTime') {
+      leaveSummary = ` • Leaves strictly at ${endTime12Str}`;
+    }
 
     schedPreviewTitle.textContent = subjectName;
-    schedPreviewTiming.textContent = `${daysText} at ${time12Str} (${durationVal} mins)`;
+    schedPreviewTiming.textContent = `${daysText} from ${time12Str} to ${endTime12Str} IST (${humanDuration})${leaveSummary}`;
   }
 
   // Update summary on typing
@@ -875,8 +1130,36 @@ document.addEventListener('DOMContentLoaded', () => {
       scheduleClassSelect.value = '';
     }
   });
-  scheduleTimeNative?.addEventListener('input', updateSchedulePreviewSummary);
-  scheduleDurationInput?.addEventListener('input', updateSchedulePreviewSummary);
+  startTimeHour?.addEventListener('change', () => {
+    const isPm = btnStartPm?.classList.contains('active');
+    window.setStartAmPm(isPm ? 'PM' : 'AM');
+  });
+  startTimeMinute?.addEventListener('change', () => {
+    const isPm = btnStartPm?.classList.contains('active');
+    window.setStartAmPm(isPm ? 'PM' : 'AM');
+  });
+  endTimeHour?.addEventListener('change', () => {
+    const isPm = btnEndPm?.classList.contains('active');
+    window.setEndAmPm(isPm ? 'PM' : 'AM');
+  });
+  endTimeMinute?.addEventListener('change', () => {
+    const isPm = btnEndPm?.classList.contains('active');
+    window.setEndAmPm(isPm ? 'PM' : 'AM');
+  });
+  scheduleDurationInput?.addEventListener('input', syncTimeDurationUI);
+  scheduleMinParticipants?.addEventListener('input', () => {
+    const val = parseInt(scheduleMinParticipants.value, 10) || 5;
+    document.querySelectorAll('.chip-threshold').forEach((chip) => {
+      chip.classList.toggle('active', parseInt(chip.textContent, 10) === val);
+    });
+    updateThresholdHelperText(val);
+    updateSchedulePreviewSummary();
+  });
+  document.querySelectorAll('input[name="sched_leave_condition"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      setLeaveCondition(radio.value);
+    });
+  });
   document.querySelectorAll('input[name="sched_day"]').forEach((cb) => {
     cb.addEventListener('change', updateSchedulePreviewSummary);
   });
@@ -905,8 +1188,14 @@ document.addEventListener('DOMContentLoaded', () => {
         cb.checked = itemDays.includes(cb.value) || itemDays.includes('all') || itemDays.includes('*');
       });
 
-      setScheduleTime(editingItem.time || '10:00');
-      setScheduleDuration(editingItem.duration || 60);
+      if (editingItem.time) setScheduleTime(editingItem.time);
+      if (editingItem.endTime) {
+        setScheduleEndTime(editingItem.endTime);
+      } else {
+        setScheduleDuration(editingItem.duration || 60);
+      }
+      setLeaveCondition(editingItem.leaveCondition || 'both');
+      setLeaveParticipantThreshold(editingItem.leaveParticipantThreshold !== undefined ? editingItem.leaveParticipantThreshold : 5);
     } else if (editingItem && isDuplicate) {
       // DUPLICATING AN EXISTING SLOT
       isEditingId = null;
@@ -931,8 +1220,14 @@ document.addEventListener('DOMContentLoaded', () => {
         cb.checked = targetDay ? cb.value === targetDay : itemDays.includes(cb.value);
       });
 
-      setScheduleTime(editingItem.time || '10:00');
-      setScheduleDuration(editingItem.duration || 60);
+      if (editingItem.time) setScheduleTime(editingItem.time);
+      if (editingItem.endTime) {
+        setScheduleEndTime(editingItem.endTime);
+      } else {
+        setScheduleDuration(editingItem.duration || 60);
+      }
+      setLeaveCondition(editingItem.leaveCondition || 'both');
+      setLeaveParticipantThreshold(editingItem.leaveParticipantThreshold !== undefined ? editingItem.leaveParticipantThreshold : 5);
     } else {
       // ADDING A BRAND NEW CLASS
       isEditingId = null;
@@ -972,6 +1267,9 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       setScheduleTime('10:00');
+      setScheduleEndTime('11:30');
+      setLeaveCondition('both');
+      setLeaveParticipantThreshold(5);
     }
 
     let currentLink = (classLinkInput?.value || '').trim();
@@ -1030,6 +1328,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const subjectName = (classNameInput?.value || '').trim();
     let meetLink = (classLinkInput?.value || '').trim();
     const timeVal = scheduleTimeNative?.value || '10:00';
+    const endTimeVal = scheduleEndTimeNative?.value || addMinutesToHHMM(timeVal, 60);
     const durationVal = parseInt(scheduleDurationInput?.value || '60', 10);
     const enabledVal = classEnabledInput?.checked !== false;
 
@@ -1062,13 +1361,19 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const leaveCond = document.querySelector('input[name="sched_leave_condition"]:checked')?.value || 'both';
+    const leaveThresh = parseInt(scheduleMinParticipants?.value || '5', 10);
+
     const payload = {
       id: isEditingId || undefined,
       name: subjectName,
       link: meetLink,
       days: checkedDays,
       time: timeVal,
+      endTime: endTimeVal,
       duration: durationVal,
+      leaveCondition: leaveCond,
+      leaveParticipantThreshold: isNaN(leaveThresh) ? 5 : leaveThresh,
       enabled: enabledVal,
     };
 

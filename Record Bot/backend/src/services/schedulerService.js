@@ -61,13 +61,49 @@ function getStatus() {
 }
 
 /**
+ * Derives effective auto-leave options based on class-specific rules
+ * @param {object} item
+ * @param {object} [baseSettings]
+ * @returns {object}
+ */
+function getAutoLeaveForClass(item, baseSettings = {}) {
+  const base = { ...(baseSettings || {}), enabled: true };
+  const condition = item.leaveCondition || 'both';
+  const threshold = parseInt(item.leaveParticipantThreshold || base.minParticipants || '5', 10);
+
+  if (condition === 'endTime') {
+    // Leave strictly at Class End Time (disables low-participant auto-leave)
+    return {
+      ...base,
+      maxDurationEnforced: true,
+      minParticipants: 0,
+    };
+  } else if (condition === 'participants') {
+    // Leave when participants drop below threshold
+    return {
+      ...base,
+      maxDurationEnforced: false,
+      minParticipants: threshold,
+    };
+  } else {
+    // 'both': Leave when participants drop below threshold OR when End Time is reached
+    return {
+      ...base,
+      maxDurationEnforced: true,
+      minParticipants: threshold,
+    };
+  }
+}
+
+/**
  * Initiates a meeting recording session with up to 3 automatic join attempts
  * @param {string} link
  * @param {number} [durationMinutes]
  * @param {string} [name]
+ * @param {object} [customAutoLeave]
  * @returns {Promise<object>}
  */
-async function startManualSession(link, durationMinutes = 60, name = 'Manual Recording') {
+async function startManualSession(link, durationMinutes = 60, name = 'Manual Recording', customAutoLeave = null) {
   if (activeBotInstance) {
     throw new Error('A recording session is already currently active!');
   }
@@ -76,6 +112,11 @@ async function startManualSession(link, durationMinutes = 60, name = 'Manual Rec
   const maxRetries = settings.rejoinRetries !== undefined ? Math.max(1, parseInt(settings.rejoinRetries, 10)) : 3;
   const retryDelaySec = settings.rejoinDelaySec !== undefined ? Math.max(1, parseInt(settings.rejoinDelaySec, 10)) : 10;
   const durationMs = durationMinutes * 60 * 1000;
+
+  const effectiveAutoLeave = {
+    ...settings.autoLeave,
+    ...(customAutoLeave || {}),
+  };
 
   activeRecordingState = {
     name,
@@ -104,7 +145,7 @@ async function startManualSession(link, durationMinutes = 60, name = 'Manual Rec
       botName: `${name} Bot`,
       muteMicOnJoin: settings.muteMicOnJoin !== false,
       turnOffCameraOnJoin: settings.turnOffCameraOnJoin !== false,
-      autoLeave: settings.autoLeave,
+      autoLeave: effectiveAutoLeave,
       maxLobbyWaitMin: settings.maxLobbyWaitMin || 15,
     });
     activeBotInstance = bot;
@@ -316,14 +357,16 @@ async function checkAndTriggerSchedule() {
 
       if (!recordedToday.has(sessionKey)) {
         recordedToday.add(sessionKey);
-        const displayTime = item.time12 || formatTimeTo12IST(normalizedItemTime);
+        const displayTime = item.timeRange || item.time12 || formatTimeTo12IST(normalizedItemTime);
         console.log('\n========================================================================');
         console.log(`[SchedulerService] ⏰ TIME FOR CLASS: "${item.name}" (${displayTime})!`);
         console.log(`[SchedulerService] Link: ${item.link}`);
-        console.log(`[SchedulerService] Duration: ${item.duration || 60} minutes`);
+        const autoLeaveConfig = getAutoLeaveForClass(item, settings.autoLeave);
+        console.log(`[SchedulerService] Allowed Window: ${item.formattedDuration || (item.duration || 60) + ' minutes'}`);
+        console.log(`[SchedulerService] Auto-Leave Rule: ${item.leaveRuleText || 'Default'}`);
         console.log('========================================================================\n');
 
-        startManualSession(item.link, item.duration || 60, item.name).catch((err) => {
+        startManualSession(item.link, item.duration || 60, item.name, autoLeaveConfig).catch((err) => {
           console.error(`[SchedulerService Error starting ${item.name}]:`, err.message);
         });
         break;
@@ -363,4 +406,5 @@ module.exports = {
   startSchedulerDaemon,
   stopSchedulerDaemon,
   checkAndTriggerSchedule,
+  getAutoLeaveForClass,
 };

@@ -615,7 +615,7 @@
               </button>
             </div>
             <p class="tip-text" style="margin-top: 14px;">
-              💡 <strong>One-Click Startup:</strong> When enabled, the bot runs quietly in the background on PC boot with zero console windows. All scheduled classes in your timetable are monitored and recorded hands-free. You can also double-click <code>ENABLE_WINDOWS_STARTUP.bat</code> or <code>START_RECORDER.bat</code> in the project folder anytime.
+              💡 <strong>One-Click Startup:</strong> When enabled, the bot runs quietly in the background on PC boot with zero console windows. All scheduled classes in your timetable are monitored and recorded hands-free. You can also double-click <code>Google Meet Recorder.exe</code> or <code>START.bat</code> in the project folder anytime.
             </p>
           </div>
         </div>
@@ -718,41 +718,216 @@
           </div>
         </div>
 
-        <!-- 4. Select Timing & Duration -->
+        <!-- 3 & 4. Select Meeting Time Window (Class Start Time & Class End Time with AM/PM) -->
         <div class="form-row time-duration-row">
+          <!-- 3. Class Start Time -->
           <div class="form-group flex-1">
             <div class="label-with-hint">
-              <label for="schedule-time-native">3. Class Start Time</label>
+              <label>3. Class Start Time</label>
               <span class="tz-badge-subtle">🇮🇳 IST</span>
             </div>
-            <input type="time" id="schedule-time-native" class="time-input-large" required value="10:00">
 
-            <!-- Common Quick Start Time Chips -->
-            <div class="time-quick-chips">
-              <button type="button" class="chip-time" onclick="setScheduleTime('09:00')">09:00 AM</button>
-              <button type="button" class="chip-time" onclick="setScheduleTime('10:00')">10:00 AM</button>
-              <button type="button" class="chip-time" onclick="setScheduleTime('11:30')">11:30 AM</button>
-              <button type="button" class="chip-time" onclick="setScheduleTime('13:30')">01:30 PM</button>
-              <button type="button" class="chip-time" onclick="setScheduleTime('14:30')">02:30 PM</button>
-              <button type="button" class="chip-time" onclick="setScheduleTime('15:50')">03:50 PM</button>
+            <div class="time-picker-cluster-card">
+              <div class="time-inputs-cluster">
+                <!-- Start Hour -->
+                <div class="time-unit-col flex-1">
+                  <select id="start-time-hour" class="select-time-unit">
+                    <option value="01">01</option>
+                    <option value="02">02</option>
+                    <option value="03">03</option>
+                    <option value="04">04</option>
+                    <option value="05">05</option>
+                    <option value="06">06</option>
+                    <option value="07">07</option>
+                    <option value="08">08</option>
+                    <option value="09">09</option>
+                    <option value="10" selected>10</option>
+                    <option value="11">11</option>
+                    <option value="12">12</option>
+                  </select>
+                  <span class="unit-sublabel">Hour</span>
+                </div>
+
+                <span class="time-unit-colon">:</span>
+
+                <!-- Start Minute -->
+                <div class="time-unit-col flex-1">
+                  <select id="start-time-minute" class="select-time-unit">
+                    <option value="00" selected>00</option>
+                    <option value="05">05</option>
+                    <option value="10">10</option>
+                    <option value="15">15</option>
+                    <option value="20">20</option>
+                    <option value="25">25</option>
+                    <option value="30">30</option>
+                    <option value="35">35</option>
+                    <option value="40">40</option>
+                    <option value="45">45</option>
+                    <option value="50">50</option>
+                    <option value="55">55</option>
+                  </select>
+                  <span class="unit-sublabel">Min</span>
+                </div>
+
+                <!-- Start AM / PM Selector -->
+                <div class="time-unit-col">
+                  <div class="ampm-toggle-cluster" id="start-ampm-cluster">
+                    <button type="button" class="btn-ampm-toggle active" id="btn-start-am" onclick="setStartAmPm('AM')">AM</button>
+                    <button type="button" class="btn-ampm-toggle" id="btn-start-pm" onclick="setStartAmPm('PM')">PM</button>
+                  </div>
+                  <span class="unit-sublabel">Period</span>
+                </div>
+              </div>
+
+              <input type="hidden" id="schedule-time-native" value="10:00">
+              <input type="hidden" id="start-time-ampm" value="AM">
+
+              <!-- Quick Start Time Chips -->
+              <div class="time-quick-chips">
+                <button type="button" class="chip-time" onclick="setScheduleTime('09:00')">09:00 AM</button>
+                <button type="button" class="chip-time active" onclick="setScheduleTime('10:00')">10:00 AM</button>
+                <button type="button" class="chip-time" onclick="setScheduleTime('11:30')">11:30 AM</button>
+                <button type="button" class="chip-time" onclick="setScheduleTime('13:30')">01:30 PM</button>
+                <button type="button" class="chip-time" onclick="setScheduleTime('14:30')">02:30 PM</button>
+                <button type="button" class="chip-time" onclick="setScheduleTime('15:50')">03:50 PM</button>
+              </div>
             </div>
           </div>
 
+          <!-- 4. Class End Time -->
           <div class="form-group flex-1">
-            <label for="schedule-duration-input">4. For How Much Time (Duration)?</label>
-            <div class="duration-input-wrapper">
-              <input type="number" id="schedule-duration-input" class="duration-input-large" value="60" min="5" max="360" required>
-              <span class="unit-text-large">minutes</span>
+            <div class="label-with-hint">
+              <label>4. Class End Time</label>
+              <span class="tz-badge-subtle">🇮🇳 IST</span>
             </div>
 
-            <!-- Common Duration Chips -->
-            <div class="duration-quick-chips">
-              <button type="button" class="chip-duration" onclick="setScheduleDuration(45)">45m</button>
-              <button type="button" class="chip-duration" onclick="setScheduleDuration(50)">50m</button>
-              <button type="button" class="chip-duration active" onclick="setScheduleDuration(60)">60m</button>
-              <button type="button" class="chip-duration" onclick="setScheduleDuration(90)">90m</button>
-              <button type="button" class="chip-duration" onclick="setScheduleDuration(120)">2 hrs</button>
+            <div class="time-picker-cluster-card">
+              <div class="time-inputs-cluster">
+                <!-- End Hour -->
+                <div class="time-unit-col flex-1">
+                  <select id="end-time-hour" class="select-time-unit">
+                    <option value="01">01</option>
+                    <option value="02">02</option>
+                    <option value="03">03</option>
+                    <option value="04">04</option>
+                    <option value="05">05</option>
+                    <option value="06">06</option>
+                    <option value="07">07</option>
+                    <option value="08">08</option>
+                    <option value="09">09</option>
+                    <option value="10">10</option>
+                    <option value="11" selected>11</option>
+                    <option value="12">12</option>
+                  </select>
+                  <span class="unit-sublabel">Hour</span>
+                </div>
+
+                <span class="time-unit-colon">:</span>
+
+                <!-- End Minute -->
+                <div class="time-unit-col flex-1">
+                  <select id="end-time-minute" class="select-time-unit">
+                    <option value="00">00</option>
+                    <option value="05">05</option>
+                    <option value="10">10</option>
+                    <option value="15">15</option>
+                    <option value="20">20</option>
+                    <option value="25">25</option>
+                    <option value="30" selected>30</option>
+                    <option value="35">35</option>
+                    <option value="40">40</option>
+                    <option value="45">45</option>
+                    <option value="50">50</option>
+                    <option value="55">55</option>
+                  </select>
+                  <span class="unit-sublabel">Min</span>
+                </div>
+
+                <!-- End AM / PM Selector -->
+                <div class="time-unit-col">
+                  <div class="ampm-toggle-cluster" id="end-ampm-cluster">
+                    <button type="button" class="btn-ampm-toggle active" id="btn-end-am" onclick="setEndAmPm('AM')">AM</button>
+                    <button type="button" class="btn-ampm-toggle" id="btn-end-pm" onclick="setEndAmPm('PM')">PM</button>
+                  </div>
+                  <span class="unit-sublabel">Period</span>
+                </div>
+              </div>
+
+              <input type="hidden" id="schedule-endtime-native" value="11:30">
+              <input type="hidden" id="end-time-ampm" value="AM">
+              <input type="hidden" id="schedule-duration-input" value="90">
+
+              <!-- Quick End Time Chips -->
+              <div class="time-quick-chips">
+                <button type="button" class="chip-endtime" onclick="setScheduleEndTime('10:50')">10:50 AM</button>
+                <button type="button" class="chip-endtime" onclick="setScheduleEndTime('11:00')">11:00 AM</button>
+                <button type="button" class="chip-endtime active" onclick="setScheduleEndTime('11:30')">11:30 AM</button>
+                <button type="button" class="chip-endtime" onclick="setScheduleEndTime('12:30')">12:30 PM</button>
+                <button type="button" class="chip-endtime" onclick="setScheduleEndTime('14:30')">02:30 PM</button>
+                <button type="button" class="chip-endtime" onclick="setScheduleEndTime('16:00')">04:00 PM</button>
+              </div>
             </div>
+          </div>
+        </div>
+
+        <!-- 5. When to Leave the Meeting Condition -->
+        <div class="form-group leave-options-group">
+          <label style="margin-bottom: 6px; display: block; font-weight: 700; color: var(--text-bright);">5. When Should the Bot Leave the Meeting?</label>
+          
+          <div class="leave-condition-radios">
+            <label class="radio-card active" id="label-leave-both" onclick="setLeaveCondition('both')">
+              <input type="radio" name="sched_leave_condition" value="both" checked>
+              <div class="radio-card-content">
+                <div class="radio-card-title">
+                  <strong>Whichever Happens First (Recommended)</strong>
+                </div>
+                <small class="radio-card-desc">Leave if participants drop below threshold OR when Class End Time is reached.</small>
+              </div>
+            </label>
+
+            <label class="radio-card" id="label-leave-participants" onclick="setLeaveCondition('participants')">
+              <input type="radio" name="sched_leave_condition" value="participants">
+              <div class="radio-card-content">
+                <div class="radio-card-title">
+                  <strong>When Participants Drop Below Threshold</strong>
+                </div>
+                <small class="radio-card-desc">Leave as soon as class ends early and students/professor start leaving.</small>
+              </div>
+            </label>
+
+            <label class="radio-card" id="label-leave-endtime" onclick="setLeaveCondition('endTime')">
+              <input type="radio" name="sched_leave_condition" value="endTime">
+              <div class="radio-card-content">
+                <div class="radio-card-title">
+                  <strong>Strictly at Class End Time</strong>
+                </div>
+                <small class="radio-card-desc">Stay in the meeting until the scheduled Class End Time.</small>
+              </div>
+            </label>
+          </div>
+
+          <!-- Participant Threshold Setting (e.g. less than 5 or 6 people) -->
+          <div class="participant-threshold-box" id="participant-threshold-box">
+            <div class="threshold-header">
+              <label for="schedule-min-participants">Leave when fewer than this many people remain in the meeting:</label>
+              <div class="threshold-input-wrap">
+                <input type="number" id="schedule-min-participants" value="5" min="1" max="50" class="input-threshold-number">
+                <span class="unit-text">people</span>
+              </div>
+            </div>
+
+            <div class="threshold-quick-chips">
+              <span class="chips-label">Quick select:</span>
+              <button type="button" class="chip-threshold" onclick="setLeaveParticipantThreshold(3)">3 people</button>
+              <button type="button" class="chip-threshold" onclick="setLeaveParticipantThreshold(4)">4 people</button>
+              <button type="button" class="chip-threshold active" onclick="setLeaveParticipantThreshold(5)">5 people</button>
+              <button type="button" class="chip-threshold" onclick="setLeaveParticipantThreshold(6)">6 people</button>
+              <button type="button" class="chip-threshold" onclick="setLeaveParticipantThreshold(8)">8 people</button>
+              <button type="button" class="chip-threshold" onclick="setLeaveParticipantThreshold(10)">10 people</button>
+            </div>
+            <small class="helper-text" style="margin-top: 8px; display: block; color: var(--text-dim);">
+              🚪 If students leave early and only <strong>5 or fewer people</strong> remain, the bot will auto-leave after a brief grace period.
+            </small>
           </div>
         </div>
 

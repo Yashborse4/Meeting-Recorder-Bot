@@ -3,8 +3,8 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Net.NetworkInformation;
+using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -15,18 +15,25 @@ namespace GoogleMeetRecorder {
 
         [STAThread]
         static void Main() {
-            try { SetProcessDPIAware(); } catch { }
+            try {
+                try { SetProcessDPIAware(); } catch { }
 
-            bool isNewInstance;
-            using (Mutex mutex = new Mutex(true, "GoogleMeetRecorder_TrayApp_Singleton", out isNewInstance)) {
-                if (!isNewInstance) {
-                    try { Process.Start("http://localhost:3000"); } catch { }
-                    return;
+                bool isNewInstance;
+                using (Mutex mutex = new Mutex(true, "GoogleMeetRecorder_TrayApp_Singleton", out isNewInstance)) {
+                    if (!isNewInstance) {
+                        TrayAppContext.OpenDashboardUI();
+                        return;
+                    }
+
+                    Application.EnableVisualStyles();
+                    Application.SetCompatibleTextRenderingDefault(false);
+                    Application.Run(new TrayAppContext());
                 }
-
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
-                Application.Run(new TrayAppContext());
+            } catch (Exception ex) {
+                try {
+                    string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tray_crash.log");
+                    File.WriteAllText(logPath, ex.ToString());
+                } catch { }
             }
         }
     }
@@ -38,21 +45,46 @@ namespace GoogleMeetRecorder {
         private string recordingsDir;
         private ToolStripMenuItem statusMenuItem;
         private System.Windows.Forms.Timer healthCheckTimer;
+        private Form hiddenHostForm;
 
         public TrayAppContext() {
+            // Keep message loop alive indefinitely in the system tray
+            hiddenHostForm = new Form {
+                ShowInTaskbar = false,
+                WindowState = FormWindowState.Minimized,
+                FormBorderStyle = FormBorderStyle.None,
+                Size = new Size(0, 0),
+                Opacity = 0
+            };
+            this.MainForm = hiddenHostForm;
+
             ResolvePaths();
             InitializeTrayIcon();
             StartServer();
 
-            // Automatically open dashboard in browser 1.5s after launch
-            System.Windows.Forms.Timer openTimer = new System.Windows.Forms.Timer();
-            openTimer.Interval = 1500;
-            openTimer.Tick += (s, e) => {
-                openTimer.Stop();
-                openTimer.Dispose();
-                OpenDashboard();
-            };
-            openTimer.Start();
+            // Check if launched with --startup or --silent
+            string[] args = Environment.GetCommandLineArgs();
+            bool isSilent = false;
+            for (int i = 1; i < args.Length; i++) {
+                if (args[i].Equals("--startup", StringComparison.OrdinalIgnoreCase) ||
+                    args[i].Equals("--silent", StringComparison.OrdinalIgnoreCase)) {
+                    isSilent = true;
+                    break;
+                }
+            }
+
+            if (!isSilent) {
+                // Launch the desktop UI window as soon as the background server is ready
+                Thread readyThread = new Thread(() => {
+                    for (int i = 0; i < 30; i++) {
+                        if (IsPortListening(3000)) break;
+                        Thread.Sleep(100);
+                    }
+                    OpenDashboardUI();
+                });
+                readyThread.IsBackground = true;
+                readyThread.Start();
+            }
 
             // Background health check timer (every 10 seconds)
             healthCheckTimer = new System.Windows.Forms.Timer();
@@ -79,7 +111,7 @@ namespace GoogleMeetRecorder {
 
             ToolStripMenuItem openItem = new ToolStripMenuItem("🚀 Open Web Dashboard");
             openItem.Font = new Font(menu.Font, FontStyle.Bold);
-            openItem.Click += (s, e) => OpenDashboard();
+            openItem.Click += (s, e) => OpenDashboardUI();
             menu.Items.Add(openItem);
 
             ToolStripMenuItem folderItem = new ToolStripMenuItem("📁 Open Recordings Folder");
@@ -102,31 +134,51 @@ namespace GoogleMeetRecorder {
             exitItem.Click += (s, e) => ExitApplication();
             menu.Items.Add(exitItem);
 
-            Icon appIcon = null;
-            string icoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "app.ico");
-            if (File.Exists(icoPath)) {
-                try { appIcon = new Icon(icoPath); } catch { }
-            }
-            if (appIcon == null) {
-                appIcon = SystemIcons.Application;
-            }
+            // Load crisp high-DPI tray icon tailored for Windows 11 taskbars
+            Icon trayIcon = LoadTrayIcon();
 
             notifyIcon = new NotifyIcon {
-                Icon = appIcon,
+                Icon = trayIcon,
                 ContextMenuStrip = menu,
                 Text = "Google Meet Recorder (Active)",
                 Visible = true
             };
 
-            notifyIcon.DoubleClick += (s, e) => OpenDashboard();
-            notifyIcon.BalloonTipClicked += (s, e) => OpenDashboard();
+            notifyIcon.DoubleClick += (s, e) => OpenDashboardUI();
+            notifyIcon.BalloonTipClicked += (s, e) => OpenDashboardUI();
 
             notifyIcon.ShowBalloonTip(
                 3000,
-                "Google Meet Recorder is Running",
-                "Operating in your Windows tray. Double-click to open dashboard.",
+                "Google Meet Recorder Active",
+                "Running in the background. Double-click tray icon to open dashboard anytime.",
                 ToolTipIcon.Info
             );
+        }
+
+        private Icon LoadTrayIcon() {
+            Size smallSize = SystemInformation.SmallIconSize;
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string trayIcoPath = Path.Combine(baseDir, "tray.ico");
+            string appIcoPath = Path.Combine(baseDir, "app.ico");
+
+            // 1. Try embedded manifest resource (tray.ico)
+            try {
+                using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("tray.ico")) {
+                    if (stream != null) return new Icon(stream, smallSize);
+                }
+            } catch { }
+
+            // 2. Try file system tray.ico
+            if (File.Exists(trayIcoPath)) {
+                try { return new Icon(trayIcoPath, smallSize); } catch { }
+            }
+
+            // 3. Fallback to app.ico
+            if (File.Exists(appIcoPath)) {
+                try { return new Icon(appIcoPath, smallSize); } catch { }
+            }
+
+            return SystemIcons.Application;
         }
 
         private void StartServer() {
@@ -138,7 +190,7 @@ namespace GoogleMeetRecorder {
             try {
                 ProcessStartInfo psi = new ProcessStartInfo {
                     FileName = "cmd.exe",
-                    Arguments = "/c node backend\\src\\server.js",
+                    Arguments = "/c node backend\\src\\server.js --managed",
                     WorkingDirectory = projectDir,
                     CreateNoWindow = true,
                     WindowStyle = ProcessWindowStyle.Hidden,
@@ -166,6 +218,18 @@ namespace GoogleMeetRecorder {
             } catch { }
 
             KillProcessesOnPort(3000);
+
+            try {
+                ProcessStartInfo psi = new ProcessStartInfo {
+                    FileName = "powershell.exe",
+                    Arguments = "-NoProfile -Command \"Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'bot_profile' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }\"",
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden,
+                    UseShellExecute = false
+                };
+                Process p = Process.Start(psi);
+                if (p != null) p.WaitForExit(3000);
+            } catch { }
         }
 
         private void RestartServer() {
@@ -184,12 +248,39 @@ namespace GoogleMeetRecorder {
             }
         }
 
-        private void OpenDashboard() {
+        public static void OpenDashboardUI() {
+            string url = "http://localhost:3000";
+            string browserPath = FindBrowserApp();
+
             try {
-                Process.Start("http://localhost:3000");
-            } catch (Exception ex) {
-                MessageBox.Show("Could not open browser: " + ex.Message);
+                if (!string.IsNullOrEmpty(browserPath)) {
+                    // Launch in clean native Desktop App Mode (No URL bar, no browser tabs, standalone window)
+                    ProcessStartInfo psi = new ProcessStartInfo {
+                        FileName = browserPath,
+                        Arguments = string.Format("--app=\"{0}\" --window-size=1280,820", url),
+                        UseShellExecute = false
+                    };
+                    Process.Start(psi);
+                } else {
+                    Process.Start(url);
+                }
+            } catch {
+                try { Process.Start(url); } catch { }
             }
+        }
+
+        private static string FindBrowserApp() {
+            string[] candidates = new string[] {
+                @"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                @"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                @"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+            };
+
+            foreach (string path in candidates) {
+                if (File.Exists(path)) return path;
+            }
+            return null;
         }
 
         private void OpenRecordingsFolder() {
@@ -217,7 +308,7 @@ namespace GoogleMeetRecorder {
             } catch { }
         }
 
-        private bool IsPortListening(int port) {
+        private static bool IsPortListening(int port) {
             try {
                 IPGlobalProperties ipProps = IPGlobalProperties.GetIPGlobalProperties();
                 foreach (var endpoint in ipProps.GetActiveTcpListeners()) {
@@ -239,6 +330,12 @@ namespace GoogleMeetRecorder {
             }
 
             StopServer();
+
+            if (hiddenHostForm != null) {
+                hiddenHostForm.Close();
+                hiddenHostForm.Dispose();
+            }
+
             Application.Exit();
         }
 

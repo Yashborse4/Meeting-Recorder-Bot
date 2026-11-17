@@ -2,7 +2,7 @@ param(
     [switch]$NonInteractive
 )
 
-# Google Meet Recorder - Enable Windows Auto-Startup (Antivirus-Safe .lnk Shortcut)
+# Google Meet Recorder - Enable Windows Auto-Startup
 $ErrorActionPreference = 'Stop'
 
 Write-Host "========================================================================" -ForegroundColor Cyan
@@ -18,41 +18,35 @@ if (Test-Path (Join-Path $scriptDir "Record Bot")) {
 }
 
 $startupFolder = [System.IO.Path]::Combine($env:APPDATA, "Microsoft\Windows\Start Menu\Programs\Startup")
-$shortcutFile = [System.IO.Path]::Combine($startupFolder, "Google Meet Recorder.lnk")
-$legacyVbs = [System.IO.Path]::Combine($startupFolder, "GoogleMeetRecorder.vbs")
-$targetBat = Join-Path $projDir "START_RECORDER.bat"
+$startupFile = [System.IO.Path]::Combine($startupFolder, "GoogleMeetRecorder.vbs")
 
 Write-Host "Project Directory: $projDir"
-Write-Host "Startup Shortcut : $shortcutFile"
+Write-Host "Windows Startup  : $startupFolder"
 Write-Host ""
-
-# Clean up any legacy .vbs file
-if (Test-Path $legacyVbs) {
-    Remove-Item -Path $legacyVbs -Force -ErrorAction SilentlyContinue
-}
 
 # Verify node exists
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Host "[ERROR] Node.js was not detected in PATH. Please install Node.js from https://nodejs.org/" -ForegroundColor Red
-    if (-not $NonInteractive) { Read-Host "Press Enter to exit" }
+    Read-Host "Press Enter to exit"
     exit 1
 }
 
-try {
-    $wshShell = New-Object -ComObject WScript.Shell
-    $shortcut = $wshShell.CreateShortcut($shortcutFile)
-    $shortcut.TargetPath = $targetBat
-    $shortcut.WorkingDirectory = $projDir
-    $shortcut.WindowStyle = 7 # Minimized
-    $shortcut.Save()
+$vbsContent = @"
+' Auto-generated Google Meet Recorder Startup Task
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.CurrentDirectory = "$projDir"
+WshShell.Run "cmd.exe /c node backend\src\server.js --startup", 0, False
+"@
 
-    if (Test-Path $shortcutFile) {
+try {
+    Set-Content -Path $startupFile -Value $vbsContent -Encoding ASCII
+    if (Test-Path $startupFile) {
         Write-Host "========================================================================" -ForegroundColor Green
         Write-Host " [SUCCESS] Auto-Startup Successfully Configured!                         " -ForegroundColor Green
         Write-Host "========================================================================" -ForegroundColor Green
         Write-Host ""
-        Write-Host " - Native Windows shortcut (.lnk) created in Startup folder (100% Antivirus Safe)."
-        Write-Host " - The bot starts minimized on Windows boot without popups or command windows."
+        Write-Host " - The recorder bot will now start automatically whenever your PC turns on."
+        Write-Host " - It runs quietly in the background with ZERO annoying command windows."
         Write-Host " - All scheduled classes in your timetable will be recorded hands-free!"
         Write-Host ""
         Write-Host " To view or edit timetable/recordings at any time:"

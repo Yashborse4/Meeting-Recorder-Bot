@@ -29,7 +29,6 @@ function getStartupFolder() {
   if (isWsl) {
     const candidates = [
       process.env.APPDATA ? path.join(process.env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup') : null,
-      '/mnt/c/Users/yashb/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup',
     ].filter(Boolean);
 
     for (const c of candidates) {
@@ -41,6 +40,7 @@ function getStartupFolder() {
       if (fs.existsSync(usersDir)) {
         const users = fs.readdirSync(usersDir);
         for (const u of users) {
+          if (u === 'Public' || u === 'Default' || u === 'All Users') continue;
           const testPath = path.join(usersDir, u, 'AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup');
           if (fs.existsSync(testPath)) return testPath;
         }
@@ -109,24 +109,40 @@ function enableStartup(customProjDir = null) {
     }
   }
 
-  const targetBat = path.join(winProjDir, 'START_RECORDER.bat');
+  const rootExe = path.join(path.dirname(winProjDir), 'Google Meet Recorder.exe');
+  const projExe = path.join(winProjDir, 'Google Meet Recorder.exe');
+
+  let targetPath = path.join(winProjDir, 'START.bat');
+  let workDir = winProjDir;
+  let args = '';
+
+  if (fs.existsSync(rootExe)) {
+    targetPath = rootExe;
+    workDir = path.dirname(winProjDir);
+    args = '--startup';
+  } else if (fs.existsSync(projExe)) {
+    targetPath = projExe;
+    workDir = winProjDir;
+    args = '--startup';
+  }
 
   // Create standard .lnk shortcut via PowerShell COM object (Run style 7 = Minimized)
   const psCommand = [
     `$ws = New-Object -ComObject WScript.Shell;`,
     `$s = $ws.CreateShortcut('${shortcutPath.replace(/'/g, "''")}');`,
-    `$s.TargetPath = '${targetBat.replace(/'/g, "''")}';`,
-    `$s.WorkingDirectory = '${winProjDir.replace(/'/g, "''")}';`,
+    `$s.TargetPath = '${targetPath.replace(/'/g, "''")}';`,
+    args ? `$s.Arguments = '${args}';` : '',
+    `$s.WorkingDirectory = '${workDir.replace(/'/g, "''")}';`,
     `$s.WindowStyle = 7;`,
     `$s.Save();`,
-  ].join(' ');
+  ].filter(Boolean).join(' ');
 
   execSync(`powershell -NoProfile -Command "${psCommand}"`, { stdio: 'ignore' });
 
   return {
     enabled: true,
     path: shortcutPath,
-    projectDir: winProjDir,
+    projectDir: workDir,
     message: 'Google Meet Recorder is now set to start automatically on Windows boot.',
   };
 }

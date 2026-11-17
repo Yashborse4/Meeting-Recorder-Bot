@@ -11,14 +11,17 @@ const config = require('../config');
  * Triggers an instant on-demand meeting recording session
  */
 async function startRecording(req, res) {
-  const { link, duration, name } = req.body;
+  const { link, duration, name, leaveCondition, leaveParticipantThreshold } = req.body;
   if (!link || !link.includes('meet.google.com')) {
     return res.status(400).json({ ok: false, error: 'Please enter a valid Google Meet URL.' });
   }
 
   try {
     const dur = parseInt(duration || '60', 10);
-    const session = await schedulerService.startManualSession(link, dur, name || 'Manual Session');
+    const customAutoLeave = (leaveCondition || leaveParticipantThreshold)
+      ? { leaveCondition, leaveParticipantThreshold: parseInt(leaveParticipantThreshold || '5', 10) }
+      : null;
+    const session = await schedulerService.startManualSession(link, dur, name || 'Manual Session', customAutoLeave);
     res.json({ ok: true, session });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });

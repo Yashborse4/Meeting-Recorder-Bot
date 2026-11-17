@@ -1,21 +1,31 @@
 # Dependencies
 node_modules/
-backend/node_modules/
+**/node_modules/
 
-# Compiled extension
+# Compiled extension build output
 dist/
+**/dist/
 
 # Browser binaries & user profiles (sensitive & large)
-backend/bot_profile/
-backend/chrome/
-backend/recordings/
+**/bot_profile/
+**/chrome/
+**/recordings/
 
-# Local state & configuration
-backend/timetable.json
-backend/subjects.json
-backend/settings.json
+# Local state & dynamic user configuration
+**/timetable.json
+**/subjects.json
+**/settings.json
+!**/timetable.example.json
+!**/subjects.example.json
+!**/settings.example.json
 
-# Logs and system files
+# Environment and sensitive keys
+.env
+.env.*
+!.env.example
+
+# Logs and system artifacts
 *.log
+**/*.log
 .DS_Store
 Thumbs.db

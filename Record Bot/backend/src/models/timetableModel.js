@@ -11,8 +11,63 @@ const {
   DAY_FULL_NAMES,
   normalizeTimeTo24,
   formatTimeTo12IST,
+  formatTimeTo12Short,
+  calculateDurationMinutes,
+  calculateEndTime,
+  formatHumanDuration,
   getISTDate,
 } = require('../utils/timeUtils');
+
+/**
+ * Enriches a timetable entry with normalized start time, end time, duration, and formatted time range
+ * @param {object} raw
+ * @returns {object}
+ */
+function enrichTimetableItem(raw) {
+  if (!raw) return raw;
+
+  const normalizedTime = normalizeTimeTo24(raw.time || '10:00');
+  const time12 = formatTimeTo12IST(normalizedTime);
+
+  let duration = parseInt(raw.duration || '60', 10);
+  let normalizedEndTime = raw.endTime ? normalizeTimeTo24(raw.endTime) : null;
+
+  if (normalizedEndTime) {
+    duration = calculateDurationMinutes(normalizedTime, normalizedEndTime);
+  } else {
+    normalizedEndTime = calculateEndTime(normalizedTime, duration);
+  }
+
+  const endTime12 = formatTimeTo12IST(normalizedEndTime);
+  const timeRange = `${formatTimeTo12Short(normalizedTime)} – ${formatTimeTo12Short(normalizedEndTime)} IST`;
+  const formattedDuration = formatHumanDuration(duration);
+
+  const leaveCondition = raw.leaveCondition || 'both'; // 'both' | 'participants' | 'endTime'
+  const leaveParticipantThreshold = parseInt(raw.leaveParticipantThreshold || '5', 10);
+
+  let leaveRuleText = 'Leaves on End Time or < 5 people';
+  if (leaveCondition === 'endTime') {
+    leaveRuleText = `Leaves on Class End Time (${formatTimeTo12Short(normalizedEndTime)})`;
+  } else if (leaveCondition === 'participants') {
+    leaveRuleText = `Leaves when < ${leaveParticipantThreshold} people in class`;
+  } else {
+    leaveRuleText = `Leaves when < ${leaveParticipantThreshold} people or at ${formatTimeTo12Short(normalizedEndTime)}`;
+  }
+
+  return {
+    ...raw,
+    time: normalizedTime,
+    time12,
+    endTime: normalizedEndTime,
+    endTime12,
+    duration,
+    formattedDuration,
+    timeRange,
+    leaveCondition,
+    leaveParticipantThreshold,
+    leaveRuleText,
+  };
+}
 
 /**
  * Loads all scheduled timetable items from timetable.json
@@ -28,7 +83,8 @@ function loadTimetable() {
   }
   try {
     const raw = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(raw);
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list.map(enrichTimetableItem) : [];
   } catch (e) {
     console.error(`[TimetableModel] Error reading ${filePath}:`, e.message);
     return [];
@@ -41,8 +97,9 @@ function loadTimetable() {
  * @returns {Array}
  */
 function saveTimetable(data) {
-  fs.writeFileSync(config.TIMETABLE_FILE, JSON.stringify(data, null, 2), 'utf-8');
-  return data;
+  const enriched = Array.isArray(data) ? data.map(enrichTimetableItem) : [];
+  fs.writeFileSync(config.TIMETABLE_FILE, JSON.stringify(enriched, null, 2), 'utf-8');
+  return enriched;
 }
 
 /**
@@ -76,19 +133,20 @@ function addOrUpdateClass(classData) {
         ? slot.days.map((d) => String(d).toLowerCase())
         : [String(slot.days || 'mon').toLowerCase()];
 
-      const normalizedTime = normalizeTimeTo24(slot.time);
-      const time12 = formatTimeTo12IST(normalizedTime);
-
-      const entry = {
+      const rawEntry = {
         id: slotId,
         name: baseName,
         link: baseLink,
         days: formattedDays,
-        time: normalizedTime,
-        time12,
-        duration: parseInt(slot.duration || classData.duration || '60', 10),
+        time: slot.time || classData.time,
+        endTime: slot.endTime || classData.endTime,
+        duration: slot.duration || classData.duration,
+        leaveCondition: slot.leaveCondition || classData.leaveCondition || 'both',
+        leaveParticipantThreshold: slot.leaveParticipantThreshold || classData.leaveParticipantThreshold || 5,
         enabled,
       };
+
+      const entry = enrichTimetableItem(rawEntry);
 
       if (existingIdx >= 0) {
         timetable[existingIdx] = entry;
@@ -110,24 +168,25 @@ function addOrUpdateClass(classData) {
     ? classData.days.map((d) => String(d).toLowerCase())
     : [String(classData.days || 'mon').toLowerCase()];
 
-  const normalizedTime = normalizeTimeTo24(classData.time);
-  const time12 = formatTimeTo12IST(normalizedTime);
-
   let link = (classData.link || '').trim();
   if (link && !link.startsWith('http://') && !link.startsWith('https://')) {
     link = 'https://' + link;
   }
 
-  const entry = {
+  const rawEntry = {
     id,
     name: classData.name || 'Untitled Class',
     link,
     days: formattedDays,
-    time: normalizedTime,
-    time12,
-    duration: parseInt(classData.duration || '60', 10),
+    time: classData.time,
+    endTime: classData.endTime,
+    duration: classData.duration,
+    leaveCondition: classData.leaveCondition || 'both',
+    leaveParticipantThreshold: classData.leaveParticipantThreshold || 5,
     enabled: classData.enabled !== false,
   };
+
+  const entry = enrichTimetableItem(rawEntry);
 
   if (existingIdx >= 0) {
     timetable[existingIdx] = entry;
@@ -236,20 +295,21 @@ function printTimetableSummary(timetable = loadTimetable()) {
     'Status'.padEnd(10) +
     'Class Name'.padEnd(22) +
     'Days'.padEnd(28) +
-    'Time'.padEnd(16) +
-    'Duration'.padEnd(10)
+    'Time Window (From - To)'.padEnd(28) +
+    'Duration'.padEnd(12)
   );
-  console.log('-'.repeat(86));
+  console.log('-'.repeat(100));
 
   for (const item of timetable) {
     const status = item.enabled ? 'ACTIVE' : 'DISABLED';
     const days = Array.isArray(item.days) ? item.days.join(', ') : item.days;
+    const timeRangeStr = item.timeRange || `${item.time12 || item.time} - ${item.endTime12 || item.endTime}`;
     console.log(
       `[${status}]`.padEnd(10) +
       (item.name || 'Untitled').padEnd(22) +
       days.padEnd(28) +
-      (item.time12 || item.time || '--:--').padEnd(16) +
-      `${item.duration || 60}m`.padEnd(10)
+      timeRangeStr.padEnd(28) +
+      (item.formattedDuration || `${item.duration || 60}m`).padEnd(12)
     );
     console.log(`  -> Link: ${item.link}`);
   }
@@ -257,6 +317,7 @@ function printTimetableSummary(timetable = loadTimetable()) {
 }
 
 module.exports = {
+  enrichTimetableItem,
   loadTimetable,
   saveTimetable,
   addOrUpdateClass,

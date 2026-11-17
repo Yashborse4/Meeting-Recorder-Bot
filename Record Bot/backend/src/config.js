@@ -41,17 +41,19 @@ function getDownloadDir() {
  * Detects Chrome for Testing or installed Chrome / Chromium executable
  */
 function getExecutablePath() {
+  const localAppData = process.env.LOCALAPPDATA;
   const standardPaths = [
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    localAppData ? path.join(localAppData, 'Google\\Chrome\\Application\\chrome.exe') : null,
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
     '/snap/bin/chromium',
-  ];
+  ].filter(Boolean);
 
   try {
     const { getSettings } = require('./models/settingsModel');

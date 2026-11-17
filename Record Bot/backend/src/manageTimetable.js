@@ -11,13 +11,21 @@ function handleAdd(args) {
   const link = args[1];
   const daysStr = args[2];
   const time = args[3];
-  const duration = parseInt(args[4] || '60', 10);
+  let endTime = null;
+  let duration = 60;
+  if (args[4]) {
+    if (String(args[4]).includes(':')) {
+      endTime = args[4];
+    } else {
+      duration = parseInt(args[4], 10) || 60;
+    }
+  }
 
   if (!name || !link || !daysStr || !time) {
     console.log('\nUsage to add a class:');
-    console.log('  node backend/src/manageTimetable.js add "<Name>" "<Meet Link>" "<Days: mon,tue,wed,thu,fri,sat,sun>" "<HH:MM>" [DurationMinutes]\n');
+    console.log('  node backend/src/manageTimetable.js add "<Name>" "<Meet Link>" "<Days: mon,tue,wed,thu,fri,sat,sun>" "<From HH:MM>" ["<To HH:MM>" or DurationMinutes]\n');
     console.log('Example:');
-    console.log('  node backend/src/manageTimetable.js add "Data Structures" "https://meet.google.com/abc-defg-hij" "mon,wed,fri" "10:30" 60\n');
+    console.log('  node backend/src/manageTimetable.js add "Data Structures" "https://meet.google.com/abc-defg-hij" "mon,wed,fri" "10:30" "12:00"\n');
     return;
   }
 
@@ -27,6 +35,7 @@ function handleAdd(args) {
     link,
     days,
     time,
+    endTime,
     duration,
     enabled: true,
   });

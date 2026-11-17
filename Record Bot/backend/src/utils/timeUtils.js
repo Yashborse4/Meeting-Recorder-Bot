@@ -1,6 +1,6 @@
 /**
  * backend/src/utils/timeUtils.js
- * Time formatting, parsing, and Indian Standard Time (IST, Asia/Kolkata) utilities
+ * Time formatting, parsing, range calculations, and Indian Standard Time (IST, Asia/Kolkata) utilities
  */
 
 const DAY_NAMES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -42,6 +42,78 @@ function formatTimeTo12IST(timeStr) {
   const ampm = h >= 12 ? 'PM' : 'AM';
   h = h % 12 || 12;
   return `${String(h).padStart(2, '0')}:${m} ${ampm} IST`;
+}
+
+/**
+ * Formats "HH:MM" 24h into short 12h format without timezone (e.g. "10:00 AM", "02:30 PM")
+ * @param {string} timeStr
+ * @returns {string}
+ */
+function formatTimeTo12Short(timeStr) {
+  if (!timeStr) return '--:--';
+  const norm = normalizeTimeTo24(timeStr);
+  const [hStr, mStr] = norm.split(':');
+  let h = parseInt(hStr, 10);
+  const m = mStr ? mStr.padStart(2, '0') : '00';
+  if (isNaN(h)) return timeStr;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${String(h).padStart(2, '0')}:${m} ${ampm}`;
+}
+
+/**
+ * Calculates duration in minutes from startTime to endTime
+ * @param {string} startTime e.g. "10:00"
+ * @param {string} endTime e.g. "11:30"
+ * @returns {number} Duration in minutes
+ */
+function calculateDurationMinutes(startTime, endTime) {
+  if (!startTime || !endTime) return 60;
+  const [startH, startM] = normalizeTimeTo24(startTime).split(':').map((n) => parseInt(n, 10));
+  const [endH, endM] = normalizeTimeTo24(endTime).split(':').map((n) => parseInt(n, 10));
+
+  let startTotal = startH * 60 + startM;
+  let endTotal = endH * 60 + endM;
+
+  if (endTotal <= startTotal) {
+    // Spans past midnight
+    endTotal += 24 * 60;
+  }
+
+  const diff = endTotal - startTotal;
+  return Math.max(5, diff);
+}
+
+/**
+ * Calculates endTime given startTime and duration in minutes
+ * @param {string} startTime e.g. "10:00"
+ * @param {number} durationMinutes e.g. 90
+ * @returns {string} Normalized 24h endTime "HH:MM"
+ */
+function calculateEndTime(startTime, durationMinutes = 60) {
+  const [startH, startM] = normalizeTimeTo24(startTime).split(':').map((n) => parseInt(n, 10));
+  const dur = parseInt(durationMinutes, 10) || 60;
+  const totalMins = (startH * 60 + startM + dur) % (24 * 60);
+
+  const endH = Math.floor(totalMins / 60);
+  const endM = totalMins % 60;
+  return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+}
+
+/**
+ * Formats a duration in minutes into a friendly string (e.g. 90 -> "1 hr 30 mins", 60 -> "1 hr", 45 -> "45 mins")
+ * @param {number} durationMinutes
+ * @returns {string}
+ */
+function formatHumanDuration(durationMinutes) {
+  const mins = parseInt(durationMinutes, 10) || 0;
+  if (mins <= 0) return '0 mins';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+
+  if (h > 0 && m > 0) return `${h} hr ${m} mins`;
+  if (h > 0) return h === 1 ? '1 hr' : `${h} hrs`;
+  return `${m} mins`;
 }
 
 /**
@@ -92,5 +164,9 @@ module.exports = {
   DAY_FULL_NAMES,
   normalizeTimeTo24,
   formatTimeTo12IST,
+  formatTimeTo12Short,
+  calculateDurationMinutes,
+  calculateEndTime,
+  formatHumanDuration,
   getISTDate,
 };

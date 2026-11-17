@@ -5,6 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const puppeteer = require('puppeteer');
 const config = require('../config');
 
@@ -15,17 +16,17 @@ const BOT_PROFILE_DIR = config.BOT_PROFILE_DIR;
  * Detects the standard system Google Chrome User Data Default profile path
  */
 function getSystemChromeDir() {
+  const localAppData = process.env.LOCALAPPDATA;
+  const userProfile = process.env.USERPROFILE || os.homedir();
   const candidates = [
-    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'User Data', 'Default') : null,
-    process.env.USERPROFILE ? path.join(process.env.USERPROFILE, 'AppData', 'Local', 'Google', 'Chrome', 'User Data', 'Default') : null,
-    '/mnt/c/Users/yashb/AppData/Local/Google/Chrome/User Data/Default',
-    'C:\\Users\\yashb\\AppData\\Local\\Google\\Chrome\\User Data\\Default',
+    localAppData ? path.join(localAppData, 'Google', 'Chrome', 'User Data', 'Default') : null,
+    userProfile ? path.join(userProfile, 'AppData', 'Local', 'Google', 'Chrome', 'User Data', 'Default') : null,
   ].filter(Boolean);
 
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }
-  return candidates[candidates.length - 1];
+  return candidates[0] || '';
 }
 
 const SYSTEM_CHROME_DIR = getSystemChromeDir();
