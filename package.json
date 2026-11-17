@@ -9,6 +9,7 @@
     "build:tray": "cmd /c scripts\\build_tray.bat",
     "desktop:shortcut": "cmd /c ADD_TO_DESKTOP.bat",
     "bot": "npm --prefix \"Record Bot\" run start:bot",
+    "package": "powershell -ExecutionPolicy Bypass -File scripts\\package.ps1",
     "startup:enable": "cmd /c ENABLE_WINDOWS_STARTUP.bat",
     "startup:disable": "cmd /c DISABLE_WINDOWS_STARTUP.bat"
   }
