@@ -6,6 +6,11 @@ node_modules/
 dist/
 **/dist/
 
+# Distribution Release Packages
+release/
+releases/
+*.zip
+
 # Browser binaries & user profiles (sensitive & large)
 **/bot_profile/
 **/chrome/
